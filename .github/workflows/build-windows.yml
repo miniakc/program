@@ -41,6 +41,21 @@ jobs:
           name: EMSQuiz-UI-QA
           path: dist/qa/
           if-no-files-found: error
+      - name: Align this release tag with the verified build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const ref = 'tags/windows-0.4.1';
+            const repo = context.repo;
+            try {
+              const old = await github.rest.git.getRef({...repo, ref});
+              if (old.data.object.sha !== context.sha) {
+                await github.rest.git.updateRef({...repo, ref, sha: context.sha, force: true});
+              }
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.git.createRef({...repo, ref: 'refs/' + ref, sha: context.sha});
+            }
       - name: Publish tested installer
         uses: softprops/action-gh-release@v2
         with:

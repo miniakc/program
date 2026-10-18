@@ -93,6 +93,7 @@ class WorkspaceUI:
         if key!='play' and hasattr(self,'stop_countdown'):self.stop_countdown()
         self.tabs.select(self.views[key][0]);self.sync_navigation()
         if key in self.page_canvases:self.page_canvases[key].yview_moveto(0)
+        self.draw_task()
     def sync_navigation(self):
         current=self.tabs.select()
         for key,(frame,title) in self.views.items():
@@ -111,6 +112,8 @@ class WorkspaceUI:
         self.status=tk.StringVar(value='')
     def draw_task(self):
         job=self.task;active=self.working
+        if self.current_view=='play' and not active:self.job_box.pack_forget()
+        elif not self.job_box.winfo_manager():self.job_box.pack(side='bottom',fill='x',padx=24,pady=(4,15),before=self.tabs)
         color='#b16740' if job.state in ('error','cancelled','stopping') else TEAL
         self.job_title.configure(text=f'{job.name}  ·  {job.phase}' if job.state!='idle' else '준비됨',fg=color)
         elapsed=f'{job.elapsed//60:02d}:{job.elapsed%60:02d}'
@@ -233,7 +236,8 @@ class WorkspaceUI:
         for key,title,width in [('state','상태',80),('topic','챕터 / 주제',140),('stem','문제',550)]:self.qlist.heading(key,text=title);self.qlist.column(key,width=width,stretch=key=='stem')
         self.qlist.pack(side='left',fill='both',expand=True);scroll=ttk.Scrollbar(frame,orient='vertical',command=self.qlist.yview);scroll.pack(side='right',fill='y');self.qlist.configure(yscrollcommand=scroll.set);self.qlist.bind('<Double-1>',lambda e:self.safe(self.edit_selected))
         row=ttk.Frame(self.bank);row.pack(side='bottom',fill='x',pady=(10,0),before=frame);self.bank_quiz_button=self.action(row,'선택 문제 바로 풀기  →',self.start_quiz,True,side='right')
-        self.heading(self.play,'CLASSROOM QUIZ','함께 풀며 배우는 시간.','문제마다 10초가 자동 시작됩니다. 0초가 되어도 정답 공개와 이동은 직접 합니다.')
+        ttk.Label(self.play,text='함께 풀며 배우는 시간.',font=('맑은 고딕',18,'bold')).pack(anchor='w',pady=(0,6))
+        ttk.Label(self.play,text='자동 10초 · 시간 종료 후에도 정답 공개와 이동은 직접 합니다.',style='Muted.TLabel').pack(anchor='w',pady=(0,10))
         row=ttk.Frame(self.play);row.pack(fill='x');self.action(row,'퀴즈 시작',self.start_quiz,True)
         self.quiz_count=tk.StringVar(value='전체');ttk.Label(row,text='문항 수').pack(side='left',padx=8);ttk.Combobox(row,textvariable=self.quiz_count,values=['전체','10','20','30','50'],state='readonly',width=7).pack(side='left')
         self.quiz_shuffle=tk.BooleanVar(value=False);ttk.Checkbutton(row,text='무작위 순서',variable=self.quiz_shuffle).pack(side='left',padx=12)

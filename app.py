@@ -302,7 +302,7 @@ class App(WorkspaceUI, tk.Tk):
             path=self.assets.resolve(name)
             if path:
                 with Image.open(path) as im:
-                    preview=im.convert('RGB');preview.thumbnail((min(width,850),360));photo=ImageTk.PhotoImage(preview)
+                    preview=im.convert('RGB');preview.thumbnail((min(width,850),min(280,max(150,int(self.quizframe.winfo_height()*.38)))));photo=ImageTk.PhotoImage(preview)
                 self.quiz_images.append(photo);label=ttk.Label(content,image=photo,style='Card.TLabel',cursor='hand2');label.pack(anchor='w',pady=4);label.bind('<Button-1>',lambda e,n=name:self.open_quiz_image(n))
                 ttk.Label(content,text=name+' · 클릭하면 원본 크기로 열기',style='CardMuted.TLabel').pack(anchor='w')
             else:ttk.Label(content,text='이미지 없음: '+name+' · 사용안내에서 교재 이미지 ZIP을 가져오세요.',foreground='#b35b4c',wraplength=width).pack(anchor='w')
