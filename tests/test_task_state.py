@@ -21,15 +21,16 @@ class PdfProgressTests(unittest.TestCase):
     def test_page_completed_events_and_cache_reuse(self):
         import tempfile,threading
         from pathlib import Path
-        from unittest.mock import patch,MagicMock
+        from unittest.mock import patch
         from pipeline import extract_pdf
+        from test_pdf_layout import textbook_fixture
+        from pypdf import PdfReader,PdfWriter
         with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp)/'sample.pdf';path.write_bytes(b'pdf')
-            page=MagicMock();page.extract_text.return_value='장비는 사용하기 전에 작동 여부를 확인합니다. 충분히 긴 본문입니다.'
-            reader=MagicMock();reader.pages=[page,page];events=[]
-            with patch('pypdf.PdfReader',return_value=reader):
+            path=Path(tmp)/'sample.pdf';textbook_fixture(path)
+            page=PdfReader(path).pages[0];writer=PdfWriter();writer.add_page(page);writer.add_page(page);writer.write(path);events=[]
+            with patch('pdf_layout.analyze',wraps=__import__('pdf_layout').analyze) as analyze:
                 result=extract_pdf(path,Path(tmp)/'cache',threading.Event(),events.append)
                 self.assertEqual([e['current'] for e in events if e['phase']=='페이지 처리 완료'],[1,2])
                 self.assertEqual(events[-1]['total'],2)
-                page.extract_text.reset_mock();events.clear();self.assertEqual(extract_pdf(path,Path(tmp)/'cache',threading.Event(),events.append),result)
-                page.extract_text.assert_not_called();self.assertTrue(any(e['phase']=='저장된 본문 재사용' for e in events))
+                analyze.reset_mock();events.clear();self.assertEqual(extract_pdf(path,Path(tmp)/'cache',threading.Event(),events.append),result)
+                analyze.assert_not_called();self.assertTrue(any(e['phase']=='저장된 본문 재사용' for e in events))

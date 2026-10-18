@@ -22,19 +22,39 @@ def group(boxes,gap=5):
         result.append(b)
     return result
 
-def detect_regions(page):
+def page_box(page,b):
+    """Map unrotated PDF object coordinates to the displayed CropBox."""
+    x0,y0,x1,y1=page.get_bbox();rw,rh=x1-x0,y1-y0;rotation=page.get_rotation()
+    def point(x,y):
+        x-=x0;y-=y0
+        return (y,rw-x) if rotation==90 else (rw-x,rh-y) if rotation==180 else (rh-y,x) if rotation==270 else (x,y)
+    points=[point(x,y) for x in (b[0],b[2]) for y in (b[1],b[3])]
+    return (min(p[0] for p in points),min(p[1] for p in points),max(p[0] for p in points),max(p[1] for p in points))
+
+def detect_regions(page,layout=None):
     import pypdfium2 as pdfium
     w,h=page.get_size();graphics=[];texts=[];scan=False
+    paper=clip(page_box(page,page.get_trimbox()),w,h)
+    if area(paper)<=0:paper=(0,0,w,h)
+    excluded=[]
+    if layout and all(abs(a-b)<2 for a,b in zip(layout.get('layout_size',[]),(w,h))) and len(layout.get('layout_size',[]))==2:
+        excluded=[(b['box'][0],h-b['box'][3],b['box'][2],h-b['box'][1]) for b in layout.get('blocks',[]) if b['kind'] in ('callout','table')]
     for obj in page.get_objects():
         if obj.type not in (pdfium.raw.FPDF_PAGEOBJ_IMAGE,pdfium.raw.FPDF_PAGEOBJ_PATH,pdfium.raw.FPDF_PAGEOBJ_TEXT,pdfium.raw.FPDF_PAGEOBJ_SHADING):continue
-        b=clip(obj.get_bounds(),w,h)
+        b=clip(page_box(page,obj.get_bounds()),w,h)
         if not all(math.isfinite(v) for v in b) or area(b)<=0:continue
         if obj.type==pdfium.raw.FPDF_PAGEOBJ_TEXT:texts.append(b);continue
         ratio=area(b)/(w*h)
         if ratio>.65:
             if obj.type==pdfium.raw.FPDF_PAGEOBJ_IMAGE:scan=True
             continue # page backgrounds / full scans are never exported as figures
-        bw,bh=b[2]-b[0],b[3]-b[1]
+        bw,bh=b[2]-b[0],b[3]-b[1];cx,cy=(b[0]+b[2])/2,(b[1]+b[3])/2
+        # TrimBox is the publisher's finished page. Registration/crop marks
+        # outside it are never learning figures. Without a TrimBox, reject
+        # small vector marks in the outer 6%; keep margin-overlapping figures.
+        if not (paper[0]<=cx<=paper[2] and paper[1]<=cy<=paper[3]):continue
+        if obj.type!=pdfium.raw.FPDF_PAGEOBJ_IMAGE and bw<w*.16 and bh<h*.16 and (cx<w*.06 or cx>w*.94 or cy<h*.06 or cy>h*.94):continue
+        if any(b[0]>=e[0]-3 and b[1]>=e[1]-3 and b[2]<=e[2]+3 and b[3]<=e[3]+3 for e in excluded):continue
         # Ignore thin long rules, tiny decoration and text-sized specks.
         if max(bw,bh)<12 or (min(bw,bh)<1.5 and max(bw,bh)>w*.65):continue
         graphics.append(b)

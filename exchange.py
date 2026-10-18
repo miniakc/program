@@ -35,7 +35,7 @@ class AssetStore:
         raw=Path(path).read_bytes();name=hashlib.sha256(raw).hexdigest()[:24]+'.png'
         with Image.open(io.BytesIO(raw)) as im:im.convert('RGB').save(self.root/name)
         return name
-    def manifest_path(self,digest):return self.root/(digest+'.figures-v2.json')
+    def manifest_path(self,digest):return self.root/(digest+'.figures-v3.json')
     def entries(self,digest):
         p=self.manifest_path(digest)
         return json.loads(p.read_text(encoding='utf-8'))['images'] if p.exists() else []
@@ -47,7 +47,7 @@ class AssetStore:
         data[str(page)]=[list(b) for b in boxes];p.write_text(json.dumps(data),encoding='utf-8')
         manifest=self.manifest_path(digest)
         if manifest.exists():manifest.unlink()
-    def extract(self,pdf,digest,cancel,progress):
+    def extract(self,pdf,digest,cancel,progress,pages=None):
         import pypdfium2 as pdfium
         from figure_engine import detect_regions,render_region
         manifest=self.manifest_path(digest)
@@ -55,8 +55,11 @@ class AssetStore:
             data=json.loads(manifest.read_text(encoding='utf-8'))
             if all(self.resolve(e['id']) for e in data['images']):return data['images']
         overrides=self.root/(digest+'.regions.json');regions=json.loads(overrides.read_text()) if overrides.exists() else {}
-        entries=[];states=[];document=pdfium.PdfDocument(str(pdf))
+        entries=[];states=[];document=pdfium.PdfDocument(str(pdf));layout_pdf=None
         try:
+            if pages is None:
+                import pdfplumber
+                layout_pdf=pdfplumber.open(pdf)
             total=len(document)
             for i in range(total):
                 check_cancel(cancel);progress({'phase':'그림 영역 추출 · 겹친 라벨 포함','current':i,'total':total,'unit':'쪽','detail':f'PDF {i+1}쪽 · 본문을 제외한 그림 영역을 합성합니다.'})
@@ -64,16 +67,25 @@ class AssetStore:
                 try:
                     manual=str(i+1) in regions
                     if manual:boxes=regions[str(i+1)];scan=False
-                    else:boxes,scan=detect_regions(page)
+                    else:
+                        layout=next((p for p in (pages or []) if p['page']==i+1),None)
+                        if layout_pdf is not None:
+                            from pdf_layout import analyze
+                            layout_page=layout_pdf.pages[i]
+                            try:layout=analyze(layout_page)
+                            finally:layout_page.close()
+                        boxes,scan=detect_regions(page,layout)
                     states.append({'page':i+1,'review':scan and not manual,'figures':len(boxes),'manual':manual})
                     for n,box in enumerate(boxes,1):
-                        check_cancel(cancel);name=f'{digest[:16]}_p{i+1:04d}_figure{n:03d}.png'
+                        check_cancel(cancel);name=f'{digest[:16]}_p{i+1:04d}_figv3_{n:03d}.png'
                         im=render_region(page,box);im.save(self.root/name)
                         entries.append({'id':name,'page':i+1,'kind':'figure','label':'그림 (라벨 포함)','box':list(box),'manual':manual})
                 finally:page.close()
                 progress({'phase':'그림 영역 저장 완료','current':i+1,'total':total,'unit':'쪽','detail':f'PDF {i+1}쪽 완료 · 그림 {len(boxes)}개'+(' · 스캔 페이지는 그림 영역 선택 필요' if scan else '')})
-        finally:document.close()
-        data={'version':2,'images':entries,'pages':states};temp=manifest.with_suffix('.tmp');temp.write_text(json.dumps(data,ensure_ascii=False),encoding='utf-8');temp.replace(manifest)
+        finally:
+            if layout_pdf is not None:layout_pdf.close()
+            document.close()
+        data={'version':3,'images':entries,'pages':states};temp=manifest.with_suffix('.tmp');temp.write_text(json.dumps(data,ensure_ascii=False),encoding='utf-8');temp.replace(manifest)
         return entries
     def import_zip(self,path):
         from PIL import Image
@@ -94,14 +106,13 @@ class AssetStore:
         return len(staged)
 
 def markdown(document,entries):
+    from pdf_layout import page_markdown
     parts=[]
     for p in document['pages']:
-        lines=[f"<!-- PDF_PAGE: {p['page']} -->" if p['page'] is not None else '',p['text']]
+        lines=[f"<!-- PDF_PAGE: {p['page']} -->" if p['page'] is not None else '',page_markdown(p,[e for e in entries if e['page']==p['page']])]
         if not parts:
             lines.insert(1,'<!-- EMS_SOURCE_SHA256: '+document['digest']+' -->')
             lines.insert(2,'<!-- EMS_CHAPTERS: '+json.dumps(document.get('chapters',[]),ensure_ascii=False)+' -->')
-        for e in entries:
-            if e['page']==p['page']:lines.append(f"\n{e['label']} · PDF {e['page']}쪽 · 이미지 ID: `{e['id']}`\n\n![{e['label']}](images/{e['id']})")
         parts.append('\n\n'.join(lines))
     return '\n\n'.join(parts)
 

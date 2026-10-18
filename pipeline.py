@@ -58,9 +58,11 @@ def ocr_image(image,output,cancel,executable=None):
 
 def extract_pdf(path,cache,cancel,progress,force=False):
     from pypdf import PdfReader
-    path=Path(path);raw=path.read_bytes();key=hashlib.sha256(raw).hexdigest()+('-ocr' if force else '-auto')
+    import pdfplumber
+    from pdf_layout import analyze,VERSION
+    path=Path(path);raw=path.read_bytes();key=hashlib.sha256(raw).hexdigest()+f'-layout{VERSION}'+('-ocr' if force else '-auto')
     folder=Path(cache)/key;folder.mkdir(parents=True,exist_ok=True)
-    reader=PdfReader(path);pages=[];rendered=None
+    reader=PdfReader(path);pages=[];rendered=None;layout_pdf=pdfplumber.open(path)
     total=len(reader.pages)
     progress({'phase':'PDF 준비','current':0,'total':total,'unit':'쪽','detail':f'전체 {total}쪽을 순서대로 확인합니다. 본문이 부족한 페이지는 자동 OCR합니다.'})
     try:
@@ -69,7 +71,11 @@ def extract_pdf(path,cache,cancel,progress,force=False):
             if saved.exists():
                 record=json.loads(saved.read_text(encoding='utf-8'));progress({'phase':'저장된 본문 재사용','current':i-1,'total':total,'unit':'쪽','detail':f'PDF {i}쪽의 완료된 결과를 불러옵니다.'})
             else:
-                text='' if force else page.extract_text() or '';method='text'
+                progress({'phase':'본문·박스·표 구조 분석','current':i-1,'total':total,'unit':'쪽','detail':f'PDF {i}쪽 · 문단, 목록, 박스와 표의 읽는 순서를 확인합니다.'})
+                layout_page=layout_pdf.pages[i-1]
+                try:record=analyze(layout_page)
+                finally:layout_page.close()
+                native=record['text'];text='' if force else native;method='text'
                 if force or len(text.strip())<30:
                     progress({'phase':'한국어·영어 글자 인식 (OCR)','current':i-1,'total':total,'unit':'쪽','detail':f'PDF {i}쪽 인식 중 · 현재 페이지가 끝나면 진행률이 올라갑니다.'})
                     import pypdfium2 as pdfium
@@ -86,12 +92,14 @@ def extract_pdf(path,cache,cancel,progress,force=False):
                         finally:bitmap.close()
                     finally:pdfpage.close()
                     method='ocr'
+                    record={'layout_version':VERSION,'markdown':text}
                 else:progress({'phase':'PDF 본문 추출','current':i-1,'total':total,'unit':'쪽','detail':f'PDF {i}쪽의 텍스트를 추출합니다.'})
-                record={'page':i,'text':text,'method':method};save_json(saved,record)
+                record.update(page=i,text=text,method=method);save_json(saved,record)
             pages.append(record)
             progress({'phase':'페이지 처리 완료','current':i,'total':total,'unit':'쪽','detail':f'PDF {i}쪽 완료 · 결과는 자동 저장됩니다.'})
         return pages
     finally:
+        layout_pdf.close()
         if rendered is not None:rendered.close()
 
 # UTF-8 byte bound is deliberately conservative: it avoids assuming a fixed Korean token ratio.

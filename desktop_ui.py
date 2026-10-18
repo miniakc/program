@@ -62,7 +62,7 @@ class WorkspaceUI:
         self.nav={}
         for key,text in [('home','▦  대시보드'),('docs','▤  교재 자료'),('bank','☷  문제은행'),('catalog','▦  카테고리 퀴즈'),('play','▷  퀴즈 실행'),('settings','⚙  사용안내 · 이미지')]:
             b=tk.Button(side,text=text,anchor='w',bg=WHITE,fg=MUTED,activebackground=PALE,activeforeground=TEAL,relief='flat',bd=0,padx=16,pady=13,font=('맑은 고딕',10),cursor='hand2',command=lambda k=key:self.navigate(k));b.pack(fill='x',padx=12,pady=3);self.nav[key]=b
-        tk.Label(side,text='EMS QUIZ  ·  v0.6.0\n강사 워크스페이스',bg=WHITE,fg=MUTED,font=('맑은 고딕',9),justify='left').pack(side='bottom',anchor='w',padx=22,pady=22)
+        tk.Label(side,text='EMS QUIZ  ·  v0.6.1\n강사 워크스페이스',bg=WHITE,fg=MUTED,font=('맑은 고딕',9),justify='left').pack(side='bottom',anchor='w',padx=22,pady=22)
         note=tk.Frame(side,bg='#f0f6f2',padx=13,pady=16);note.pack(side='bottom',fill='x',padx=15,pady=8)
         tk.Label(note,text='교재에서 수업까지',bg='#f0f6f2',fg='#437463',font=('맑은 고딕',10,'bold')).pack(anchor='w')
         tk.Label(note,text='PDF → MD·이미지 저장\nGPT 출제 → JSON → 퀴즈',bg='#f0f6f2',fg=MUTED,font=('맑은 고딕',9),justify='left').pack(anchor='w',pady=(8,0))

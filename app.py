@@ -14,7 +14,7 @@ ROOT=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'.local/share')))/'EMSQu
 
 class App(BankWorkspace, WorkspaceUI, tk.Tk):
     def __init__(self):
-        super().__init__();self.title('EMS QUIZ · Windows 0.6.0')
+        super().__init__();self.title('EMS QUIZ · Windows 0.6.1')
         width=max(980,min(1320,self.winfo_screenwidth()-40));height=max(680,min(890,self.winfo_screenheight()-70));self.geometry(f'{width}x{height}');self.minsize(980,680)
         self.store=Store(ROOT/'bank.sqlite3');self.events=queue.Queue();self.working=False;self.cancel=threading.Event();self.task=TaskState()
         self.cleanup_pending();self.assets=AssetStore(ROOT/'assets');self.countdown=QuizCountdown();self.timer_job=None;self.reviewer=SourceReview(self.store,self.assets);self.reviewer.reconcile()
@@ -171,7 +171,7 @@ class App(BankWorkspace, WorkspaceUI, tk.Tk):
                 if self.cancel.is_set():raise Cancelled('교재 등록을 중단했습니다. 완료한 PDF 페이지는 다시 등록할 때 재사용합니다.')
                 if p.suffix.lower()=='.pdf':
                     import hashlib
-                    self.assets.extract(p,hashlib.sha256(raw).hexdigest(),self.cancel,lambda msg:self.events.put(('status',msg)))
+                    self.assets.extract(p,hashlib.sha256(raw).hexdigest(),self.cancel,lambda msg:self.events.put(('status',msg)),pages=pages)
                 self.events.put(('doc',(p.name,raw,pages,path)))
             except Cancelled as e:self.events.put(('cancelled',str(e)))
             except Exception as e:self.events.put(('error',str(e)))
@@ -183,6 +183,15 @@ class App(BankWorkspace, WorkspaceUI, tk.Tk):
             if kind=='error':messagebox.showerror(self.task.name+' 실패',data)
         elif kind=='figures_saved':
             self.finish_task('선택한 그림 영역을 저장했습니다. MD·이미지 ZIP을 다시 저장하면 반영됩니다.');self.show_doc()
+        elif kind=='layout_updated':
+            doc,pages=data
+            previous=self.store.document(doc)['pages']
+            from review import norm
+            changed=[(p['page'],norm(p['text'])) for p in previous]!=[(p['page'],norm(p['text'])) for p in pages]
+            if changed:self.store.update_pages(doc,pages);self.reviewer.reconcile()
+            else:
+                with self.store.db:self.store.db.execute('UPDATE docs SET pages=? WHERE id=?',(json.dumps(pages,ensure_ascii=False),doc))
+            self.show_doc();self.refresh_bank();self.refresh_home();self.refresh_catalog()
         elif kind=='exported':
             review=self.assets.review_pages(self.store.document(self.selected_doc())['digest'])
             self.finish_task('MD·이미지 저장 완료'+(f' · 그림 영역 확인 필요 {len(review)}쪽' if review else ''));self.status.set('저장 위치: '+str(data)+' · '+('스캔 페이지 '+', '.join(map(str,review))+'쪽은 그림 확인·영역 선택에서 그림을 지정한 뒤 다시 저장하세요.' if review else 'MD와 필요한 그림을 GPT에 함께 첨부하고 완성된 JSON을 가져오세요.'))
@@ -229,7 +238,12 @@ class App(BankWorkspace, WorkspaceUI, tk.Tk):
         def run():
             try:
                 entries=self.assets.entries(d['digest']);original=Path(d['original'])
-                if original.suffix.lower()=='.pdf':entries=self.assets.extract(original,d['digest'],self.cancel,lambda msg:self.events.put(('status',msg)))
+                if original.suffix.lower()=='.pdf':
+                    from pdf_layout import VERSION
+                    if any(p.get('layout_version')!=VERSION for p in d['pages']):
+                        d['pages']=extract_pdf(original,ROOT/'jobs'/'extract',self.cancel,lambda msg:self.events.put(('status',msg)))
+                        self.events.put(('layout_updated',(d['id'],d['pages'])))
+                    entries=self.assets.extract(original,d['digest'],self.cancel,lambda msg:self.events.put(('status',msg)),pages=d['pages'])
                 if self.cancel.is_set():raise Cancelled('자료 저장을 중단했습니다.')
                 if md_only:
                     folder=Path(path).parent/'images';folder.mkdir(exist_ok=True)
@@ -444,6 +458,21 @@ def self_test(report):
         image.save(root/'scan.pdf','PDF',resolution=150)
         extracted=extract_pdf(root/'scan.pdf',root/'cache',threading.Event(),lambda msg:None,force=True)
         assert '12345' in extracted[0]['text'] and '응급' in extracted[0]['text'].replace(' ',''), extracted
+        from pdfminer.cmapdb import CMapDB
+        assert CMapDB.get_cmap('KSCms-UHC-H')
+        layout_fixture=Path(report).parent/'qa'/'layout-fixture.pdf'
+        assert layout_fixture.is_file(),'Layout smoke fixture missing'
+        layout_pages=extract_pdf(layout_fixture,root/'layout-cache',threading.Event(),lambda _:None)
+        assert '> - Hot food or liquid in the mouth' in layout_pages[0]['markdown']
+        assert '| Item | Meaning | Action |' in layout_pages[0]['markdown']
+        layout_assets=AssetStore(root/'layout-assets')
+        import hashlib
+        layout_digest=hashlib.sha256(layout_fixture.read_bytes()).hexdigest()
+        layout_figures=layout_assets.extract(layout_fixture,layout_digest,threading.Event(),lambda _:None,pages=layout_pages)
+        assert len(layout_figures)==1,layout_figures
+        (Path(report).parent/'qa'/'layout-output.md').write_text(markdown({'digest':layout_digest,'pages':layout_pages},layout_figures),encoding='utf-8')
+        images=Path(report).parent/'qa'/'images';images.mkdir(exist_ok=True)
+        for e in layout_figures:shutil.copy2(layout_assets.resolve(e['id']),images/e['id'])
         db=Store(root/'bank.sqlite3');assert db.questions()==[];db.db.close()
         # Start and destroy a real Tk window to verify Tcl/Tk resources in the bundle.
         ROOT=root/'app-data'

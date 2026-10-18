@@ -32,7 +32,7 @@ jobs:
         with:
           name: EMSQuiz-Windows-installer
           path: |
-            release/EMSQuiz-Setup-0.6.0.exe
+            release/EMSQuiz-Setup-0.6.1.exe
             dist/bundle-smoke.json
             dist/installed-smoke.json
           if-no-files-found: error
@@ -45,7 +45,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const ref = 'tags/windows-0.6.0';
+            const ref = 'tags/windows-0.6.1';
             const repo = context.repo;
             try {
               const old = await github.rest.git.getRef({...repo, ref});
@@ -59,18 +59,17 @@ jobs:
       - name: Publish tested installer
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: windows-0.6.0
-          name: EMS QUIZ Windows 0.6.0
+          tag_name: windows-0.6.1
+          name: EMS QUIZ Windows 0.6.1
           prerelease: true
           body: |
-            Textbook -> chapter -> checkbox question bank with selective deletion and manual editing.
-            Dashboard opens a separate textbook-linked category quiz tab. Textbooks never mix in a quiz.
-            Import JSON with automatic textbook/page/chapter/quote/image-file checks and explicit pass/fail details.
-            Automatic source comparison is not semantic or clinical answer validation. Manual review remains available.
-            Markdown exports source fingerprints and chapter ranges for subsequent GPT JSON imports.
-            Preserves offline OCR, composite figures/crop editor, Excel images and the automatic 10-second countdown.
-            Tested on Windows, including GUI interactions and install/run/uninstall without Python on PATH.
+            PDF layout extraction preserves paragraphs, callout titles/lists and ruled tables.
+            Merged table cells retain rowspan/colspan. Figures stay near their source text.
+            TrimBox and margin mark filtering skip printer crop/registration marks.
+            New figure IDs keep existing question images intact; old PDFs refresh on export.
+            Preserves textbook/chapter bank, checkbox deletion, category quizzes and local OCR.
+            Tested on Windows, including layout conversion and install/run/uninstall without Python on PATH.
           files: |
-            release/EMSQuiz-Setup-0.6.0.exe
+            release/EMSQuiz-Setup-0.6.1.exe
             dist/bundle-smoke.json
             dist/installed-smoke.json
