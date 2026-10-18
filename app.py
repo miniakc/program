@@ -126,10 +126,10 @@ class App(BankWorkspace, WorkspaceUI, tk.Tk):
             if path.name not in used:
                 try:path.unlink()
                 except OSError:pass
-        for suffix in ('.json','.figures-v2.json','.regions.json'):
+        for suffix in ('.json','.figures-v2.json','.figures-v3.json','.regions.json'):
             path=self.assets.root/(d['digest']+suffix)
             if path.exists():path.unlink()
-        for suffix in ('-auto','-ocr'):
+        for suffix in ('-auto','-ocr','-layout3-auto','-layout3-ocr'):
             path=ROOT/'jobs'/'extract'/(d['digest']+suffix)
             if path.is_dir():shutil.rmtree(path,ignore_errors=True)
         self.refresh();self.status.set('교재를 삭제했습니다. 저장된 문제와 문제에서 사용하는 그림은 유지됩니다.'+(' 열려 있는 원본 사본은 PDF 창을 닫은 뒤 다음 실행 시 자동 정리합니다.' if deferred else ''));self.draw_task()

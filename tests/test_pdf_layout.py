@@ -1,7 +1,7 @@
 import hashlib,json,tempfile,threading,unittest
 from pathlib import Path
 from pypdf import PdfWriter
-from pypdf.generic import NameObject,DictionaryObject,DecodedStreamObject,RectangleObject
+from pypdf.generic import NameObject,DictionaryObject,DecodedStreamObject,RectangleObject,ArrayObject,TextStringObject,NumberObject
 from pipeline import extract_pdf
 from exchange import AssetStore,markdown
 from pdf_layout import paragraphs,reading_order
@@ -113,3 +113,18 @@ class LayoutTests(unittest.TestCase):
             page[NameObject('/Contents')]=writer._add_object(stream);writer.write(path)
             with pdfplumber.open(path) as doc:result=analyze(doc.pages[0])
             self.assertIn('rowspan="2"',result['markdown']);self.assertIn('<td></td>',result['markdown']);self.assertIn('Merged',result['text'])
+    def test_korean_native_unicode_and_word_spaces(self):
+        import pdfplumber
+        from pdf_layout import analyze
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'korean.pdf';writer=PdfWriter();page=writer.add_blank_page(500,500)
+            text='상부 기도 폐쇄를 시사하는 네 가지 중요 징후';mapping=DecodedStreamObject()
+            chars=set(text);pairs='\n'.join(f'<{ord(c):04x}> <{ord(c):04x}>' for c in chars)
+            mapping.set_data(('/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /Test def /CMapType 2 def 1 begincodespacerange <0000> <ffff> endcodespacerange '+str(len(chars))+' beginbfchar\n'+pairs+'\nendbfchar endcmap CMapName currentdict /CMap defineresource pop end end').encode())
+            info=DictionaryObject({NameObject('/Registry'):TextStringObject('Adobe'),NameObject('/Ordering'):TextStringObject('Identity'),NameObject('/Supplement'):NumberObject(0)})
+            cid=DictionaryObject({NameObject('/Type'):NameObject('/Font'),NameObject('/Subtype'):NameObject('/CIDFontType2'),NameObject('/BaseFont'):NameObject('/Test'),NameObject('/CIDSystemInfo'):info,NameObject('/DW'):NumberObject(1000)})
+            font=DictionaryObject({NameObject('/Type'):NameObject('/Font'),NameObject('/Subtype'):NameObject('/Type0'),NameObject('/BaseFont'):NameObject('/Test'),NameObject('/Encoding'):NameObject('/Identity-H'),NameObject('/DescendantFonts'):ArrayObject([writer._add_object(cid)]),NameObject('/ToUnicode'):writer._add_object(mapping)})
+            page[NameObject('/Resources')]=DictionaryObject({NameObject('/Font'):DictionaryObject({NameObject('/F1'):writer._add_object(font)})})
+            stream=DecodedStreamObject();stream.set_data(('BT /F1 10 Tf 50 400 Td <'+text.encode('utf-16-be').hex()+'> Tj ET').encode());page[NameObject('/Contents')]=writer._add_object(stream);writer.write(path)
+            with pdfplumber.open(path) as pdf:result=analyze(pdf.pages[0])
+            self.assertEqual(result['text'],text)
