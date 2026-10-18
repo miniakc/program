@@ -1,0 +1,9 @@
+__pycache__/
+.build-venv/
+build/
+dist/
+release/
+*.spec
+*.sqlite3
+*.pdf
+.env*

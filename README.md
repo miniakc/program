@@ -1,3 +1,68 @@
-# EMS QUIZ for Windows
+# EMS QUIZ · Windows 0.2.0
 
-Windows installer project. Textbook files, API keys and user data are not stored in this repository.
+Windows 설치형 응급의료 문제은행. **Python·OCR을 별도로 설치하지 않는** 사용자용 설치 EXE를 GitHub Actions에서 빌드합니다.
+설치 파일은 [Releases](https://github.com/miniakc/program/releases/tag/windows-0.2.0)에 Windows 검사가 성공한 후 게시됩니다. 빌드 실패 시 설치 파일이 게시되지 않습니다.
+
+## 사용 순서
+
+1. 설치 EXE를 실행하고 EMS QUIZ를 엽니다.
+2. **교재 관리**에서 PDF 또는 UTF-8 Markdown을 등록합니다.
+3. PDF는 텍스트를 우선 추출하고 본문이 부족한 페이지는 내장 한국어·영어 OCR로 처리합니다. 잘못 추출된 텍스트는 **선택 교재 전체 OCR**으로 다시 인식할 수 있습니다.
+4. 챕터 제목과 PDF 페이지 범위를 추가하고 목록에서 챕터를 선택합니다. PDF 첫 페이지가 1입니다.
+5. **설정**에 본인의 OpenAI API 키를 입력합니다. API 키는 현재 실행 중에만 보관하고 디스크에 저장하지 않습니다. ChatGPT 구독과 API 이용은 별도입니다.
+6. **AI 문제 생성**에서 최대 문항 수를 선택하고 생성합니다. 선택한 본문을 OpenAI API로 전송하며 API 이용료가 발생합니다.
+7. **검토함·문제은행**에서 원문·정답·해설을 검토하고 승인한 뒤 퀴즈에 사용합니다.
+
+## 기능과 한계
+
+| 기능 | 동작 |
+|---|---|
+| PDF → MD | 본문 추출 및 필요 시 Tesseract 한국어·영어 OCR. 페이지 표식 보존 |
+| MD 교재 등록 | `<!-- PDF_PAGE: 1 -->` 형식의 원본 페이지 표식 지원. 표시가 없으면 페이지 추정하지 않음 |
+| AI 문제 생성 | OpenAI Responses API·JSON Schema, 최대 100문항, 기본 모델 `gpt-5-mini` |
+| 긴 교재 처리 | UTF-8 바이트 수를 제한해 순차 요청. 구간 수가 요청 문항 수보다 많으면 범위 전체에 걸쳐 구간 선택 |
+| 실패·중단 재개 | 완료 구간을 PC에 저장. 같은 교재·범위·설정 재실행 시 재사용. 완료 안 된 요청은 재실행 시 다시 청구될 수 있음 |
+| 근거 검사 | 지정 페이지·본문의 실제 인용문과 대조. 자동 판정은 정답 정확성을 보장하지 않음 |
+| 문제은행 | JSON·JSON 코드 블록 MD 가져오기, 직접 작성, 검토·수정·검색·선택 삭제·JSON 내보내기 |
+| 퀴즈 | 승인된 객관식 문제 중 최대 10개 |
+| 백업 | DB와 원본 교재 사본을 ZIP으로 저장 |
+
+텍스트·표·수식·그림·다단 배치의 완전한 복원은 보장하지 않습니다. OCR 결과와 생성 문제를 원문과 비교하세요. 최신 외부 임상 지침을 검색·검증하는 기능은 포함하지 않습니다. 본문에 이미 잘못된 내용이 있으면 AI 문제에도 반영될 수 있습니다.
+
+API 연결·사용 권한·결제 한도는 사용자의 API 계정에 따릅니다. 실사용 API 키는 저장소·설치 파일에 포함하지 않습니다. 유료 API를 이용한 실제 생성 검증은 키가 제공되지 않아 수행하지 않았고, 자동 검사에서는 대체 응답을 사용합니다.
+
+OX·단답형, 의미 기반 중복 판정, DOCX·XLSX 출력, 수업 이력, 챕터 수정·삭제와 백업 복원 UI는 아직 지원하지 않습니다.
+
+## OCR 구성
+
+Marker·Surya 대신 Tesseract 5.5.3 Windows 배포본과 공식 tessdata_fast의 `kor`·`eng` 데이터를 설치 파일에 포함합니다. 사용자는 모델을 따로 다운로드하지 않습니다. OCR은 로컬 실행이며 GPU를 요구하지 않습니다. 속도·최소 사양은 실제 PC에서 추가 평가가 필요합니다.
+
+- 엔진 배포본: https://github.com/tesseract-ocr/tesseract/releases/tag/5.5.3
+- Windows 배포 안내: https://github.com/UB-Mannheim/tesseract/wiki
+- 언어 데이터: https://github.com/tesseract-ocr/tessdata_fast/tree/87416418657359cb625c412a48b6e1d6d41c29bd
+- PDF 추출: https://pypdf.readthedocs.io/en/stable/user/extract-text.html
+- AI JSON 출력: https://developers.openai.com/api/docs/guides/structured-outputs
+
+## 데이터
+
+`%LOCALAPPDATA%\EMSQuiz` 아래 `bank.sqlite3`, `originals`, `jobs`에 사용자 데이터를 보관합니다. 공개 저장소에는 프로그램 소스와 빌드 설정만 업로드하며 교재·문제·키는 업로드하지 않습니다. 프로그램 제거 시 이 데이터 폴더는 삭제하지 않습니다.
+
+설정 화면의 전체 백업 ZIP에는 문제은행 DB와 원본 사본이 들어갑니다. 처리 재개용 `jobs` 캐시는 백업 대상이 아닙니다. 복원 UI는 아직 없으며 프로그램 종료 후 DB·originals를 같은 폴더에 복사하는 방식입니다. 원본 경로가 다른 PC에서 달라질 수 있으므로 교재 재등록이 필요할 수 있습니다.
+
+## 개발·빌드
+
+개발·빌드 PC에만 Windows x64, Python 3.12와 Inno Setup 6가 필요합니다. `build-windows.ps1`은 의존성·자동 검사·PyInstaller 번들·OCR 포함·EXE 실행 검사·설치 파일 생성·설치된 EXE 실행·제거 검사를 진행합니다. 설치 실행 검사에서는 PATH에서 개발 Python 경로를 제거합니다. Python 자체가 없는 별도 실제 PC에서의 시험과는 구분합니다.
+
+지원 Windows 버전·최소 사양은 아직 확정하지 않았습니다. 자동 검사는 Windows Server 2022 GitHub Runner에서 실행합니다. 코드 서명은 적용하지 않았습니다.
+
+## Markdown 페이지 예시
+
+```markdown
+<!-- PDF_PAGE: 1 -->
+
+첫 페이지 본문
+
+<!-- PDF_PAGE: 2 -->
+
+두 번째 페이지 본문
+```

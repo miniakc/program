@@ -1,0 +1,49 @@
+name: Build Windows installer
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+      - name: Install Inno Setup if unavailable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --version=6.4.3 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup install failed' }
+          }
+      - name: Build, OCR, install and test with Python removed from PATH
+        shell: pwsh
+        run: ./build-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EMSQuiz-Windows-installer
+          path: |
+            release/EMSQuiz-Setup-0.2.0.exe
+            dist/bundle-smoke.json
+            dist/installed-smoke.json
+          if-no-files-found: error
+      - name: Publish tested installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-0.2.0
+          name: EMS QUIZ Windows 0.2.0
+          prerelease: true
+          body: |
+            Windows installer with embedded Python, Korean/English OCR, and OpenAI API question generation.
+            Automated: data tests, bundled OCR, GUI startup, silent install/run/uninstall.
+            Live AI generation requires the user's own OpenAI API key and has not been tested with a paid API request.
+          files: |
+            release/EMSQuiz-Setup-0.2.0.exe
+            dist/bundle-smoke.json
+            dist/installed-smoke.json
