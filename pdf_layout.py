@@ -5,7 +5,7 @@ Keep plain source text separate from Markdown syntax for citation checks.
 """
 import html,re,statistics
 
-VERSION=3
+VERSION=4
 BULLET=re.compile(r'^(?:[•·●▪‣◦\uf0b7]|[-–] )\s*')
 
 def clean(text):return re.sub(r'[ \t\u00a0]+',' ',text or '').strip()
@@ -20,23 +20,44 @@ def text_lines(page,split_columns=True):
     # PDF character positions, including TJ word gaps, to recover word spaces.
     words=page.extract_words(x_tolerance=1.8,x_tolerance_ratio=.18,y_tolerance=2.5,keep_blank_chars=False,return_chars=True)
     rows=[]
-    for word in sorted(words,key=lambda w:(w['top'],w['x0'])):
-        row=next((r for r in reversed(rows[-8:]) if abs(r['top']-word['top'])<=max(2.5,min(r['height'],word['bottom']-word['top'])*.28)),None)
-        if row is None:row={'top':word['top'],'height':word['bottom']-word['top'],'words':[]};rows.append(row)
+    for word in words:
+        chars=word['chars'];word['_size']=statistics.median([c.get('size',10) for c in chars] or [10])
+        baselines=[-c['matrix'][5] for c in chars if c.get('upright') and c.get('matrix')]
+        word['_baseline']=statistics.median(baselines) if baselines else word['bottom']
+    # Baselines are stable across Korean/Latin fonts whose ink bounds differ.
+    # Small reference numbers are attached after the regular text rows exist.
+    typical=statistics.median([w['_size'] for w in words] or [10]);small=[]
+    for word in sorted(words,key=lambda w:(w['_baseline'],w['x0'])):
+        if word['_size']<typical*.76 and len(word['text'])<=4:small.append(word);continue
+        row=next((r for r in reversed(rows[-8:]) if abs(r['baseline']-word['_baseline'])<=max(1.5,min(r['size'],word['_size'])*.2)),None)
+        if row is None:row={'baseline':word['_baseline'],'size':word['_size'],'words':[]};rows.append(row)
         row['words'].append(word)
+    for word in small:
+        candidates=[r for r in rows if abs(r['baseline']-word['_baseline'])<r['size']*.85]
+        row=min(candidates,key=lambda r:abs(r['baseline']-word['_baseline'])) if candidates else None
+        if row is None:rows.append({'baseline':word['_baseline'],'size':word['_size'],'words':[word]})
+        else:word['_reference']=True;row['words'].append(word)
+    # A single wide justified space is not a column. Require a recurring gutter.
+    row_words=[sorted(r['words'],key=lambda w:w['x0']) for r in rows]
+    gaps=[[(a['x1'],b['x0']) for a,b in zip(ws,ws[1:]) if b['x0']-a['x1']>max(18,r['size']*2.2)] for r,ws in zip(rows,row_words)]
+    def gutter(x):
+        eligible=[i for i,ws in enumerate(row_words) if ws and ws[0]['x0']<x<ws[-1]['x1']]
+        return sum(any(a<x<b for a,b in gaps[i]) for i in eligible)>=max(2,len(eligible)*.4)
     lines=[]
     for row in rows:
         current=[]
         for word in sorted(row['words'],key=lambda w:w['x0']):
-            if split_columns and current and word['x0']-current[-1]['x1']>max(18,row['height']*2.2):
+            if split_columns and current and word['x0']-current[-1]['x1']>max(18,row['size']*2.2) and gutter((word['x0']+current[-1]['x1'])/2):
                 lines.append(make_line(current));current=[]
             current.append(word)
         if current:lines.append(make_line(current))
     return sorted(lines,key=lambda x:(x['box'][1],x['box'][0]))
 
 def make_line(words):
-    return {'kind':'line','box':[min(w['x0'] for w in words),min(w['top'] for w in words),max(w['x1'] for w in words),max(w['bottom'] for w in words)],'text':clean(' '.join(w['text'] for w in words)),
-            'size':statistics.median([c.get('size',10) for w in words for c in w['chars']] or [10])}
+    text=''
+    for i,w in enumerate(words):text+=('' if not i or w.get('_reference') and w['x0']-words[i-1]['x1']<w['_size'] else ' ')+w['text']
+    return {'kind':'line','box':[min(w['x0'] for w in words),min(w['top'] for w in words),max(w['x1'] for w in words),max(w['bottom'] for w in words)],'text':clean(text),
+            'baseline':statistics.median([w['_baseline'] for w in words if not w.get('_reference')] or [0]),'size':statistics.median([w['_size'] for w in words if not w.get('_reference')] or [10])}
 
 def reading_order(items):
     """Recursive whitespace cuts; read each column before the next column."""
@@ -51,29 +72,75 @@ def reading_order(items):
             if left and right and len(left)+len(right)==len(items):return reading_order(left)+reading_order(right)
     return sorted(items,key=lambda i:(round(i['box'][1]/3),i['box'][0]))
 
+def sentence_lines(text):
+    """Split at conservative sentence boundaries, retaining source wording.
+
+    Markdown hard breaks keep sentence lines visible in both a text editor
+    and a rendered Markdown reader. Decimal points and abbreviations stay.
+    """
+    text=clean(text);parts=[];start=0;depth=0
+    abbreviations={'e.g.','i.e.','etc.','vs.','dr.','mr.','mrs.','ms.','prof.','fig.','no.','al.','vol.','pp.'}
+    closing='\"\u201d\u2019\')]}\u300d\u300f'
+    for i,char in enumerate(text):
+        if char in '([{':depth+=1
+        elif char in ')]}':depth=max(0,depth-1)
+        if char not in '.!?。' or depth:continue
+        if char=='.':
+            if i and i+1<len(text) and text[i-1].isdigit() and text[i+1].isdigit():continue
+            if i+1<len(text) and text[i+1] in '.!?':continue
+            token=text[:i+1].split()[-1].lower().lstrip('([{\"\u201c\u2018')
+            if token in abbreviations or re.fullmatch(r'(?:[a-z]\.)+',token) or token.endswith('...'):continue
+            if re.fullmatch(r'\d+\.',text[start:i+1].strip()):continue
+        end=i+1
+        while end<len(text) and text[end] in closing:end+=1
+        reference=re.match(r'(?:\d{1,3}|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)(?=\s|$)',text[end:])
+        if reference:end+=len(reference[0])
+        if end<len(text) and not text[end].isspace():continue
+        if end<len(text):parts.append(text[start:end].strip());start=end
+    if text[start:].strip():parts.append(text[start:].strip())
+    return '  \n'.join(parts)
+
 def paragraphs(lines):
+    if not lines:return ''
+    def baseline(line):return line.get('baseline',line['box'][3])
+    sizes=[l['size'] for l in lines];size=statistics.median(sizes)
+    steps=[baseline(b)-baseline(a) for a,b in zip(lines,lines[1:]) if size*.7<=baseline(b)-baseline(a)<=size*2.2]
+    leading=statistics.median(steps) if steps else size*1.4
+    left=min(l['box'][0] for l in lines);width=max(l['box'][2] for l in lines)-left
+    separator=' '
     result=[];last=None;last_bullet=False
     for line in lines:
         text=clean(line['text']);bullet=bool(BULLET.match(text))
         if bullet:text='- '+BULLET.sub('',text)
         if last is None:result.append(text)
         else:
-            height=max(1,last['box'][3]-last['box'][1]);gap=line['box'][1]-last['box'][3]
-            new=(bullet or gap>height*.8 or line['size']>last['size']*1.18 or line['box'][0]<last['box'][0]-height*2 or line['box'][1]<last['box'][1])
+            step=baseline(line)-baseline(last)
+            numbered=bool(re.match(r'^(?:\d+[.)]|[①-⑳])\s',text))
+            # Paragraphs depend on baseline leading / indentation, not glyph
+            # ink height. Latin runs, superscripts and tight CJK boxes used to
+            # make ordinary wrapped lines look like separate paragraphs.
+            finished=bool(re.search(r'[.!?。][”’"\')\]]*$',last['text']))
+            indent=line['box'][0]-left
+            new=(bullet or numbered or step>leading*1.5 or line['size']>last['size']*1.2 or line['size']<last['size']*.8 or step<0 or (finished and indent>size*.7) or (last_bullet and indent<size*.5 and step>leading*1.15))
             if new:result.append(text)
-            elif last_bullet or (result and result[-1].startswith('- ')):result[-1]+=' '+text
-            else:
-                # A new indented line following a finished sentence is a new
-                # paragraph; otherwise remove the PDF's visual line wrapping.
-                indent=line['box'][0]-last['box'][0]
-                if indent>height*.8 and re.search(r'[.!?。]$',last['text']):result.append(text)
-                else:result[-1]+=' '+text
+            else:result[-1]+=separator+text
         last=line;last_bullet=bullet
     out=[]
     for index,value in enumerate(result):
+        # List items and table cells retain their own structure; body prose
+        # is reflowed first and then broken only at sentence boundaries.
+        if not value.startswith('- ') and not re.match(r'^\d+[.)]\s',value):value=sentence_lines(value)
         if index and value.startswith('- ') and result[index-1].startswith('- '):out.append('\n'+value)
         else:out.append(('\n\n' if out else '')+value)
     return ''.join(out)
+
+def ocr_formats(text):
+    flow=[]
+    for part in re.split(r'\n\s*\n',text.strip()):
+        raw=[clean(line) for line in part.splitlines() if clean(line)]
+        lines=[{'text':line,'size':10,'box':[0,i*14,400,i*14+10]} for i,line in enumerate(raw)]
+        if lines:flow.append(paragraphs(lines))
+    return '\n\n'.join(flow)
 
 def table_text(page,table):
     xs=sorted({round(c[i],2) for c in table.cells for i in (0,2)});ys=sorted({round(c[i],2) for c in table.cells for i in (1,3)})
@@ -132,8 +199,8 @@ def analyze(page):
         if any(inside(b,s['box']) for s in special):continue
         ordered=reading_order(enclosed);first=ordered[0];rest=ordered[1:]
         title=first['text'];body=paragraphs(rest)
-        md='> **'+title+'**'+(('\n>\n'+ '\n'.join('> '+line if line else '>' for line in body.splitlines())) if body else '')
-        special.append({'kind':'callout','box':list(b),'text':title+'\n'+body,'markdown':md})
+        def callout(content):return '> **'+title+'**'+(('\n>\n'+ '\n'.join('> '+line if line else '>' for line in content.splitlines())) if content else '')
+        special.append({'kind':'callout','box':list(b),'text':title+'\n'+body,'markdown':callout(body)})
     remaining=[line for line in lines if not any(inside(line['box'],s['box'],2) for s in special)]
     # Production filenames outside the text area are not textbook content.
     remaining=[l for l in remaining if not ((l['box'][1]<visible[1]+page.height*.05 or l['box'][3]>visible[3]-page.height*.05) and re.search(r'\.(?:indd|qxd)\b',l['text'],re.I))]
@@ -144,7 +211,7 @@ def analyze(page):
         blocks.append({'kind':'text','box':bounds,'text':text,'markdown':text});pending.clear()
     for item in ordered:
         if item['kind']=='line':
-            if pending and (item['box'][1]<pending[-1]['box'][1] or item['box'][0]>pending[-1]['box'][2]+18 or item['box'][1]-pending[-1]['box'][3]>max(12,(pending[-1]['box'][3]-pending[-1]['box'][1])*1.6)):flush()
+            if pending and (item.get('baseline',item['box'][1])<pending[-1].get('baseline',pending[-1]['box'][1]) or item['box'][0]>pending[-1]['box'][2]+18 or item['box'][1]-pending[-1]['box'][3]>pending[-1]['size']*2.2):flush()
             pending.append(item)
         else:flush();blocks.append(item)
     flush()

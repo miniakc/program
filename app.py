@@ -14,7 +14,7 @@ ROOT=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'.local/share')))/'EMSQu
 
 class App(BankWorkspace, WorkspaceUI, tk.Tk):
     def __init__(self):
-        super().__init__();self.title('EMS QUIZ · Windows 0.6.1')
+        super().__init__();self.title('EMS QUIZ · Windows 0.6.2')
         width=max(980,min(1320,self.winfo_screenwidth()-40));height=max(680,min(890,self.winfo_screenheight()-70));self.geometry(f'{width}x{height}');self.minsize(980,680)
         self.store=Store(ROOT/'bank.sqlite3');self.events=queue.Queue();self.working=False;self.cancel=threading.Event();self.task=TaskState()
         self.cleanup_pending();self.assets=AssetStore(ROOT/'assets');self.countdown=QuizCountdown();self.timer_job=None;self.reviewer=SourceReview(self.store,self.assets);self.reviewer.reconcile()
@@ -129,7 +129,7 @@ class App(BankWorkspace, WorkspaceUI, tk.Tk):
         for suffix in ('.json','.figures-v2.json','.figures-v3.json','.regions.json'):
             path=self.assets.root/(d['digest']+suffix)
             if path.exists():path.unlink()
-        for suffix in ('-auto','-ocr','-layout3-auto','-layout3-ocr'):
+        for suffix in ('-auto','-ocr','-layout3-auto','-layout3-ocr','-layout4-auto','-layout4-ocr'):
             path=ROOT/'jobs'/'extract'/(d['digest']+suffix)
             if path.is_dir():shutil.rmtree(path,ignore_errors=True)
         self.refresh();self.status.set('교재를 삭제했습니다. 저장된 문제와 문제에서 사용하는 그림은 유지됩니다.'+(' 열려 있는 원본 사본은 PDF 창을 닫은 뒤 다음 실행 시 자동 정리합니다.' if deferred else ''));self.draw_task()
@@ -465,6 +465,7 @@ def self_test(report):
         layout_pages=extract_pdf(layout_fixture,root/'layout-cache',threading.Event(),lambda _:None)
         assert '> - Hot food or liquid in the mouth' in layout_pages[0]['markdown']
         assert '| Item | Meaning | Action |' in layout_pages[0]['markdown']
+        assert 'Body before the callout.  \nThis sentence is a normal paragraph.  \nThe second visual line continues the paragraph.' in layout_pages[0]['markdown']
         layout_assets=AssetStore(root/'layout-assets')
         import hashlib
         layout_digest=hashlib.sha256(layout_fixture.read_bytes()).hexdigest()

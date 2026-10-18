@@ -92,6 +92,8 @@ def extract_pdf(path,cache,cancel,progress,force=False):
                         finally:bitmap.close()
                     finally:pdfpage.close()
                     method='ocr'
+                    from pdf_layout import ocr_formats
+                    text=ocr_formats(text)
                     record={'layout_version':VERSION,'markdown':text}
                 else:progress({'phase':'PDF 본문 추출','current':i-1,'total':total,'unit':'쪽','detail':f'PDF {i}쪽의 텍스트를 추출합니다.'})
                 record.update(page=i,text=text,method=method);save_json(saved,record)

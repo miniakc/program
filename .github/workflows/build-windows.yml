@@ -32,7 +32,7 @@ jobs:
         with:
           name: EMSQuiz-Windows-installer
           path: |
-            release/EMSQuiz-Setup-0.6.1.exe
+            release/EMSQuiz-Setup-0.6.2.exe
             dist/bundle-smoke.json
             dist/installed-smoke.json
           if-no-files-found: error
@@ -45,7 +45,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const ref = 'tags/windows-0.6.1';
+            const ref = 'tags/windows-0.6.2';
             const repo = context.repo;
             try {
               const old = await github.rest.git.getRef({...repo, ref});
@@ -59,17 +59,18 @@ jobs:
       - name: Publish tested installer
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: windows-0.6.1
-          name: EMS QUIZ Windows 0.6.1
+          tag_name: windows-0.6.2
+          name: EMS QUIZ Windows 0.6.2
           prerelease: true
           body: |
-            PDF layout extraction preserves paragraphs, callout titles/lists and ruled tables.
-            Merged table cells retain rowspan/colspan. Figures stay near their source text.
-            TrimBox and margin mark filtering skip printer crop/registration marks.
-            New figure IDs keep existing question images intact; old PDFs refresh on export.
-            Preserves textbook/chapter bank, checkbox deletion, category quizzes and local OCR.
+            One Markdown format: rejoin visual wraps, then break lines at sentence boundaries.
+            Keep real paragraphs, titles, callouts, lists, tables, figures and source page anchors.
+            Baseline text grouping handles mixed font bounds and small reference numbers.
+            Recurring-gutter detection avoids splitting justified spaces into false columns.
+            Decimals and common English abbreviations are protected. No added export modes.
+            Old textbook text refreshes on export; existing question figures remain intact.
             Tested on Windows, including layout conversion and install/run/uninstall without Python on PATH.
           files: |
-            release/EMSQuiz-Setup-0.6.1.exe
+            release/EMSQuiz-Setup-0.6.2.exe
             dist/bundle-smoke.json
             dist/installed-smoke.json

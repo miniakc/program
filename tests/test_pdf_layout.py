@@ -57,10 +57,10 @@ class LayoutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);pdf=root/'textbook.pdf';textbook_fixture(pdf)
             pages=extract_pdf(pdf,root/'cache',threading.Event(),lambda _:None);p=pages[0]
-            self.assertEqual(p['layout_version'],3);self.assertEqual(p['method'],'text')
+            self.assertEqual(p['layout_version'],4);self.assertEqual(p['method'],'text')
             md=p['markdown'];self.assertIn('> **BOX 1-1 Important signs**',md)
             self.assertIn('> - Hot food or liquid in the mouth',md);self.assertIn('> - Unable to swallow saliva',md)
-            self.assertNotIn('  ',md);self.assertNotIn('production_job',md)
+            self.assertNotRegex(md,r'\S {2,}\S');self.assertNotIn('production_job',md)
             self.assertLess(md.index('Body before'),md.index('BOX 1-1'));self.assertLess(md.index('BOX 1-1'),md.index('Body after'))
             self.assertIn('| Item | Meaning | Action |',md);self.assertIn('| A | Check | Record |',md)
             self.assertEqual([b['kind'] for b in p['blocks']].count('callout'),1)
