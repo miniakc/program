@@ -118,7 +118,10 @@ def analyze(page):
         if any(intersects(b,s['box']) for s in special):continue
         enclosed=[line for line in lines if inside(line['box'],b,2)]
         if len(enclosed)<2 or sum(len(l['text']) for l in enclosed)<30:continue
-        if any(intersects(b,box(im)) for im in content.images):continue
+        # Publishers sometimes rasterize just the coloured header strip.
+        # It is decoration, whereas a substantive illustration stays a figure.
+        if any(intersects(b,box(im)) and not (inside(box(im),b,2) and im['bottom']-im['top']<h*.25 and im['x1']-im['x0']>w*.6) for im in content.images):continue
+        if any(inside(box(line),b) and line['x1']-line['x0']>2 and line['bottom']-line['top']>2 for line in content.lines):continue
         # Dense arbitrary vector drawings are figures, not textual callouts.
         if sum(inside(box(c),b) for c in content.curves)>8:continue
         enclosed=text_lines(content.crop(b,strict=False),split_columns=False)

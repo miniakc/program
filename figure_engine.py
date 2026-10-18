@@ -54,7 +54,8 @@ def detect_regions(page,layout=None):
         # small vector marks in the outer 6%; keep margin-overlapping figures.
         if not (paper[0]<=cx<=paper[2] and paper[1]<=cy<=paper[3]):continue
         if obj.type!=pdfium.raw.FPDF_PAGEOBJ_IMAGE and bw<w*.16 and bh<h*.16 and (cx<w*.06 or cx>w*.94 or cy<h*.06 or cy>h*.94):continue
-        if any(b[0]>=e[0]-3 and b[1]>=e[1]-3 and b[2]<=e[2]+3 and b[3]<=e[3]+3 for e in excluded):continue
+        enclosed=[e for e in excluded if b[0]>=e[0]-3 and b[1]>=e[1]-3 and b[2]<=e[2]+3 and b[3]<=e[3]+3]
+        if enclosed and (obj.type!=pdfium.raw.FPDF_PAGEOBJ_IMAGE or any(bh<(e[3]-e[1])*.25 and bw>(e[2]-e[0])*.6 for e in enclosed)):continue
         # Ignore thin long rules, tiny decoration and text-sized specks.
         if max(bw,bh)<12 or (min(bw,bh)<1.5 and max(bw,bh)>w*.65):continue
         graphics.append(b)

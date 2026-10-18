@@ -38,6 +38,21 @@ BT /F1 7 Tf 40 12 Td (production_job.indd 2026-10-18) Tj ET
 ''');page[NameObject('/Contents')]=writer._add_object(stream);writer.write(path)
 
 class LayoutTests(unittest.TestCase):
+    def test_raster_header_strip_is_not_a_separate_figure(self):
+        from pypdf import PdfReader
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);path=root/'gradient.pdf';textbook_fixture(path)
+            writer=PdfWriter();page=writer.add_page(PdfReader(path).pages[0])
+            raster=DecodedStreamObject();raster.set_data(Image.new('RGB',(100,5),(110,30,80)).tobytes())
+            raster.update({NameObject('/Type'):NameObject('/XObject'),NameObject('/Subtype'):NameObject('/Image'),NameObject('/Width'):NumberObject(100),NameObject('/Height'):NumberObject(5),NameObject('/ColorSpace'):NameObject('/DeviceRGB'),NameObject('/BitsPerComponent'):NumberObject(8)})
+            page['/Resources'][NameObject('/XObject')]=DictionaryObject({NameObject('/Header'):writer._add_object(raster)})
+            stream=DecodedStreamObject();stream.set_data(page.get_contents().get_data().replace(b'.3 .1 .35 rg 60 560 480 20 re f',b'q 480 0 0 20 60 560 cm /Header Do Q'))
+            page[NameObject('/Contents')]=writer._add_object(stream);writer.write(path)
+            pages=extract_pdf(path,root/'cache',threading.Event(),lambda _:None)
+            self.assertIn('> **BOX 1-1 Important signs**',pages[0]['markdown'])
+            assets=AssetStore(root/'assets');digest=hashlib.sha256(path.read_bytes()).hexdigest()
+            self.assertEqual(len(assets.extract(path,digest,threading.Event(),lambda _:None,pages=pages)),1)
     def test_box_spacing_lists_table_and_body_order(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);pdf=root/'textbook.pdf';textbook_fixture(pdf)
