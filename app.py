@@ -178,7 +178,7 @@ class App(WorkspaceUI, tk.Tk):
         qs=self.selected_questions()
         if not qs:raise ValueError('내보낼 문제가 없습니다.')
         path=filedialog.asksaveasfilename(defaultextension='.xlsx',initialfile='EMS_문제은행.xlsx',filetypes=[('Excel 통합 문서','*.xlsx')])
-        if path:export_xlsx(path,qs);self.status.set(f'{len(qs)}문제 Excel 저장 완료 · 이미지 파일명과 출처 포함');self.draw_task()
+        if path:export_xlsx(path,qs,self.assets);self.status.set(f'{len(qs)}문제 Excel 저장 완료 · 그림 시트·이미지 파일명·출처 포함');self.draw_task()
     def refresh_bank(self):
         if not hasattr(self,'qlist'):return
         self.qlist.delete(*self.qlist.get_children());self.qrows=self.store.questions()
@@ -381,7 +381,7 @@ def self_test(report):
         entries=window.assets.extract(root/'scan.pdf',digest,threading.Event(),lambda msg:None)
         assert any(e['kind']=='image' for e in entries)
         export_bundle(root/'material.zip',{'name':'scan.pdf','digest':digest,'pages':extracted},window.assets,entries)
-        export_xlsx(root/'questions.xlsx',[q]);assert (root/'questions.xlsx').read_bytes().startswith(b'PK')
+        export_xlsx(root/'questions.xlsx',[q],window.assets);assert (root/'questions.xlsx').read_bytes().startswith(b'PK')
         window.editor(q);window.update();capture('editor');window.stop_countdown();window.store.db.close();window.destroy()
     Path(report).write_text(json.dumps({'ok':True,'python':sys.version,'frozen':bool(getattr(sys,'frozen',False)),'checks':['pdf_render','korean_english_ocr','scanned_pdf_to_text','database','gui','question_editor','quiz','sidebar_dashboard','visible_progress','busy_button_lock','completion_next_step','image_extraction','md_image_zip','json_image_quiz','xlsx_export','automatic_10_second_countdown']}),encoding='utf-8')
 

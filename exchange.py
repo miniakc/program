@@ -120,7 +120,7 @@ def answer_text(q):
 
 # Minimal OOXML writer keeps the Windows installer self-contained. All strings are
 # inline text (never formulas); no Excel/Office/Python installation is required.
-def export_xlsx(path,questions):
+def export_xlsx(path,questions,assets=None):
     NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     def el(tag,**attrs):return ET.Element('{'+NS+'}'+tag,{k:str(v) for k,v in attrs.items()})
     def xml(e):return ET.tostring(e,encoding='utf-8',xml_declaration=True)
@@ -146,7 +146,40 @@ def export_xlsx(path,questions):
     ET.SubElement(sheet,'{'+NS+'}autoFilter',ref=f'A1:O{len(rows)}')
     workbook=el('workbook');sheets=ET.SubElement(workbook,'{'+NS+'}sheets');ET.SubElement(sheets,'{'+NS+'}sheet',{'name':'문제은행','sheetId':'1','{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id':'rId1'})
     styles=f'''<styleSheet xmlns="{NS}"><fonts count="2"><font><sz val="11"/><name val="맑은 고딕"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="맑은 고딕"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF143E3D"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf fontId="1" fillId="2" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'''
-    contents='''<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'''
+    image_rows=[(i,name,assets.resolve(name) if assets else None) for i,q in enumerate(questions,1) for name in q.get('images',[])]
+    drawing=None;image_sheet=None;media=[];drawing_rels=[]
+    if image_rows:
+        ET.SubElement(sheets,'{'+NS+'}sheet',{'name':'문제 이미지','sheetId':'2','{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id':'rId3'})
+        image_sheet=el('worksheet');iv=ET.SubElement(image_sheet,'{'+NS+'}sheetViews');iview=ET.SubElement(iv,'{'+NS+'}sheetView',workbookViewId='0');ET.SubElement(iview,'{'+NS+'}pane',ySplit='1',topLeftCell='A2',state='frozen')
+        ic=ET.SubElement(image_sheet,'{'+NS+'}cols')
+        for i,width in enumerate([10,60,96],1):ET.SubElement(ic,'{'+NS+'}col',min=str(i),max=str(i),width=str(width),customWidth='1')
+        image_data=ET.SubElement(image_sheet,'{'+NS+'}sheetData')
+        DN='http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing';AN='http://schemas.openxmlformats.org/drawingml/2006/main';RN='http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+        drawing=ET.Element('{'+DN+'}wsDr')
+        for rownum,values in enumerate([['문제 번호','이미지 파일명','그림']]+[[i,name,'' if src else '이미지 파일 없음: 교재 ZIP을 가져오세요.'] for i,name,src in image_rows],1):
+            row=ET.SubElement(image_data,'{'+NS+'}row',r=str(rownum),ht='30' if rownum==1 else '285',customHeight='1')
+            for c,value in enumerate(values):
+                cell=ET.SubElement(row,'{'+NS+'}c',r=chr(65+c)+str(rownum),s='1' if rownum==1 else '0')
+                if isinstance(value,int):ET.SubElement(cell,'{'+NS+'}v').text=str(value)
+                else:cell.set('t','inlineStr');ET.SubElement(ET.SubElement(cell,'{'+NS+'}is'),'{'+NS+'}t').text=value
+        from PIL import Image
+        for rownum,(_,name,src) in enumerate(image_rows,1):
+            if src is None:continue
+            with Image.open(src) as im:
+                picture=im.convert('RGB');picture.thumbnail((640,360));out=io.BytesIO();picture.save(out,format='PNG');w,h=picture.size
+            num=len(media)+1;media.append(out.getvalue());drawing_rels.append((f'rId{num}','image',f'../media/image{num}.png'))
+            anchor=ET.SubElement(drawing,'{'+DN+'}oneCellAnchor');origin=ET.SubElement(anchor,'{'+DN+'}from')
+            for key,value in [('col',2),('colOff',47625),('row',rownum),('rowOff',47625)]:ET.SubElement(origin,'{'+DN+'}'+key).text=str(value)
+            ET.SubElement(anchor,'{'+DN+'}ext',cx=str(w*9525),cy=str(h*9525));pic=ET.SubElement(anchor,'{'+DN+'}pic');nv=ET.SubElement(pic,'{'+DN+'}nvPicPr');ET.SubElement(nv,'{'+DN+'}cNvPr',id=str(num),name=name);ET.SubElement(nv,'{'+DN+'}cNvPicPr')
+            fill=ET.SubElement(pic,'{'+DN+'}blipFill');ET.SubElement(fill,'{'+AN+'}blip',{'{'+RN+'}embed':f'rId{num}'});ET.SubElement(ET.SubElement(fill,'{'+AN+'}stretch'),'{'+AN+'}fillRect')
+            sp=ET.SubElement(pic,'{'+DN+'}spPr');xfrm=ET.SubElement(sp,'{'+AN+'}xfrm');ET.SubElement(xfrm,'{'+AN+'}off',x='0',y='0');ET.SubElement(xfrm,'{'+AN+'}ext',cx=str(w*9525),cy=str(h*9525));geo=ET.SubElement(sp,'{'+AN+'}prstGeom',prst='rect');ET.SubElement(geo,'{'+AN+'}avLst');ET.SubElement(anchor,'{'+DN+'}clientData')
+        if media:ET.SubElement(image_sheet,'{'+NS+'}drawing',{'{'+RN+'}id':'rId1'})
+    CT='http://schemas.openxmlformats.org/package/2006/content-types';contents=ET.Element('Types',xmlns=CT)
+    for ext,kind in [('rels','application/vnd.openxmlformats-package.relationships+xml'),('xml','application/xml'),('png','image/png')]:ET.SubElement(contents,'Default',Extension=ext,ContentType=kind)
+    overrides=[('/xl/workbook.xml','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'),('/xl/worksheets/sheet1.xml','application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'),('/xl/styles.xml','application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml')]
+    if image_rows:overrides.append(('/xl/worksheets/sheet2.xml','application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'))
+    if media:overrides.append(('/xl/drawings/drawing1.xml','application/vnd.openxmlformats-officedocument.drawing+xml'))
+    for part,kind in overrides:ET.SubElement(contents,'Override',PartName=part,ContentType=kind)
     def rels(items):
         e=ET.Element('Relationships',xmlns='http://schemas.openxmlformats.org/package/2006/relationships')
         for id,kind,target in items:ET.SubElement(e,'Relationship',Id=id,Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/'+kind,Target=target)
@@ -154,9 +187,14 @@ def export_xlsx(path,questions):
     target=Path(path);temp=target.with_suffix('.xlsx.tmp')
     try:
         with zipfile.ZipFile(temp,'w',zipfile.ZIP_DEFLATED) as z:
-            z.writestr('[Content_Types].xml',contents);z.writestr('_rels/.rels',rels([('rId1','officeDocument','xl/workbook.xml')]))
-            z.writestr('xl/workbook.xml',xml(workbook));z.writestr('xl/_rels/workbook.xml.rels',rels([('rId1','worksheet','worksheets/sheet1.xml'),('rId2','styles','styles.xml')]))
+            z.writestr('[Content_Types].xml',xml(contents));z.writestr('_rels/.rels',rels([('rId1','officeDocument','xl/workbook.xml')]))
+            z.writestr('xl/workbook.xml',xml(workbook));z.writestr('xl/_rels/workbook.xml.rels',rels([('rId1','worksheet','worksheets/sheet1.xml'),('rId2','styles','styles.xml')]+([('rId3','worksheet','worksheets/sheet2.xml')] if image_rows else [])))
             z.writestr('xl/styles.xml',styles);z.writestr('xl/worksheets/sheet1.xml',xml(sheet))
+            if image_rows:z.writestr('xl/worksheets/sheet2.xml',xml(image_sheet))
+            if media:
+                z.writestr('xl/worksheets/_rels/sheet2.xml.rels',rels([('rId1','drawing','../drawings/drawing1.xml')]))
+                z.writestr('xl/drawings/drawing1.xml',xml(drawing));z.writestr('xl/drawings/_rels/drawing1.xml.rels',rels(drawing_rels))
+                for n,raw in enumerate(media,1):z.writestr(f'xl/media/image{n}.png',raw)
         temp.replace(target)
     finally:
         if temp.exists():temp.unlink()

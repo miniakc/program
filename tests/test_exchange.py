@@ -52,6 +52,16 @@ class ExchangeTests(unittest.TestCase):
         before=path.read_bytes();qq['stem']='x'*32768
         with self.assertRaises(ValueError):export_xlsx(path,[qq])
         self.assertEqual(path.read_bytes(),before)
+    def test_excel_embeds_question_images(self):
+        png=self.root/'figure.png';Image.new('RGB',(500,300),'teal').save(png);name=self.assets.attach(png)
+        qq=parse_questions(json.dumps([q(type='OX',answer='O',images=[name,'missing.png'])]))[0]
+        path=self.root/'images.xlsx';export_xlsx(path,[qq],self.assets)
+        from xml.etree import ElementTree as E
+        ns={'d':'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'}
+        with zipfile.ZipFile(path) as z:
+            self.assertIn('xl/media/image1.png',z.namelist());self.assertIn('xl/worksheets/sheet2.xml',z.namelist())
+            drawing=E.fromstring(z.read('xl/drawings/drawing1.xml'));self.assertEqual(drawing.find('.//d:from/d:row',ns).text,'1')
+            self.assertIn('이미지 파일 없음',z.read('xl/worksheets/sheet2.xml').decode())
     def test_countdown_wall_clock_and_reset(self):
         current=[100.0];timer=QuizCountdown(lambda:current[0]);self.assertIsNone(timer.remaining)
         timer.start();self.assertEqual(timer.remaining,10);current[0]+=3.2;self.assertEqual(timer.remaining,7)
