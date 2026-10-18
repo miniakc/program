@@ -32,7 +32,7 @@ jobs:
         with:
           name: EMSQuiz-Windows-installer
           path: |
-            release/EMSQuiz-Setup-0.3.0.exe
+            release/EMSQuiz-Setup-0.3.1.exe
             dist/bundle-smoke.json
             dist/installed-smoke.json
           if-no-files-found: error
@@ -44,15 +44,16 @@ jobs:
       - name: Publish tested installer
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: windows-0.3.0
-          name: EMS QUIZ Windows 0.3.0
+          tag_name: windows-0.3.1
+          name: EMS QUIZ Windows 0.3.1
           prerelease: true
           body: |
-            Desktop redesign based on the original EMS QUIZ workspace, with visible per-page OCR progress and guided next steps.
+            Fix API-key header encoding failures by validating credentials before sending any request.
+            Show local key-format feedback without exposing the entered value.
             Includes embedded Python, Korean/English OCR, and OpenAI API question generation.
             Automated: data tests, bundled OCR, GUI startup, silent install/run/uninstall.
             Live AI generation requires the user's own OpenAI API key and has not been tested with a paid API request.
           files: |
-            release/EMSQuiz-Setup-0.3.0.exe
+            release/EMSQuiz-Setup-0.3.1.exe
             dist/bundle-smoke.json
             dist/installed-smoke.json

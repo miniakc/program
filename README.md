@@ -1,7 +1,11 @@
-# EMS QUIZ · Windows 0.3.0
+# EMS QUIZ · Windows 0.3.1
 
 Windows 설치형 응급의료 문제은행. **Python·OCR을 별도로 설치하지 않는** 사용자용 설치 EXE를 GitHub Actions에서 빌드합니다.
-설치 파일은 [Releases](https://github.com/miniakc/program/releases/tag/windows-0.3.0)에 Windows 검사가 성공한 후 게시됩니다. 빌드 실패 시 설치 파일이 게시되지 않습니다.
+설치 파일은 [Releases](https://github.com/miniakc/program/releases/tag/windows-0.3.1)에 Windows 검사가 성공한 후 게시됩니다. 빌드 실패 시 설치 파일이 게시되지 않습니다.
+
+## 0.3.1 수정
+
+API 키 입력값을 인증 헤더에 넣기 전에 검사합니다. 한글·비 ASCII 문자·중간 공백·줄바꿈·제어 문자·감싼 따옴표가 있으면 키 값을 노출하지 않는 안내를 표시하고 요청을 보내지 않습니다. 입력란에도 형식 확인 결과를 표시합니다. 입력 형식 통과는 실제 키의 유효성이나 계정 결제 상태를 보장하지 않습니다. 교재 본문과 제목은 계속 한글을 지원합니다.
 
 ## 0.3 변경 사항
 

@@ -35,4 +35,8 @@ class WindowsUIFlowTests(unittest.TestCase):
                 # Main next-action bar must remain mapped even in a smaller desktop window.
                 self.assertTrue(window.nextstep.winfo_ismapped());self.assertLess(window.nextstep.winfo_rooty(),window.job_box.winfo_rooty())
                 window.navigate('bank');window.update();self.assertTrue(window.bank_quiz_button.winfo_ismapped());self.assertLess(window.bank_quiz_button.winfo_rooty(),window.job_box.winfo_rooty())
+                doc=next(d for d in window.docrows if d['name']=='테스트.md');window.open_document(doc['id'])
+                window.apikey.set('abcde가');window.generate_dialog();window.update()
+                self.assertEqual(window.current_view,'settings');self.assertFalse(window.working);self.assertIn('한글',window.key_feedback.get())
+                window.apikey.set('sk-example');self.assertIn('실제 키의 유효성',window.key_feedback.get())
             finally:window.store.db.close();window.destroy()

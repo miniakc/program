@@ -61,7 +61,7 @@ class WorkspaceUI:
         self.nav={}
         for key,text in [('home','▦  대시보드'),('docs','▤  자료 관리'),('bank','☷  문제은행'),('play','▷  퀴즈 실행'),('settings','⚙  연결 및 사용안내')]:
             b=tk.Button(side,text=text,anchor='w',bg=WHITE,fg=MUTED,activebackground=PALE,activeforeground=TEAL,relief='flat',bd=0,padx=16,pady=13,font=('맑은 고딕',10),cursor='hand2',command=lambda k=key:self.navigate(k));b.pack(fill='x',padx=12,pady=3);self.nav[key]=b
-        tk.Label(side,text='EMS QUIZ  ·  v0.3.0\n강사 워크스페이스',bg=WHITE,fg=MUTED,font=('맑은 고딕',9),justify='left').pack(side='bottom',anchor='w',padx=22,pady=22)
+        tk.Label(side,text='EMS QUIZ  ·  v0.3.1\n강사 워크스페이스',bg=WHITE,fg=MUTED,font=('맑은 고딕',9),justify='left').pack(side='bottom',anchor='w',padx=22,pady=22)
         note=tk.Frame(side,bg='#f0f6f2',padx=13,pady=16);note.pack(side='bottom',fill='x',padx=15,pady=8)
         tk.Label(note,text='교재에서 수업까지',bg='#f0f6f2',fg='#437463',font=('맑은 고딕',10,'bold')).pack(anchor='w')
         tk.Label(note,text='교재 등록 → 문제 만들기\n원문 검토 → 퀴즈 실행',bg='#f0f6f2',fg=MUTED,font=('맑은 고딕',9),justify='left').pack(anchor='w',pady=(8,0))
@@ -239,10 +239,11 @@ class WorkspaceUI:
         self.heading(self.settings,'WORKSPACE GUIDE','연결하고, 바로 시작하세요.','AI 연결은 문제 생성에 사용합니다. 교재·문제은행·퀴즈는 이 PC에서 관리합니다.')
         c=self.card(self.settings,fill='x',pady=(0,14));self.label(c,'AI 자동 생성 연결','CardTitle.TLabel')
         self.label(c,'OpenAI API 키 · 현재 실행 중에만 보관합니다.','CardMuted.TLabel')
-        self.apikey=tk.StringVar();self.model=tk.StringVar(value='gpt-5-mini');ttk.Entry(c,textvariable=self.apikey,show='•',width=60).pack(fill='x',pady=(7,12))
+        self.apikey=tk.StringVar();self.model=tk.StringVar(value='gpt-5-mini');self.key_entry=ttk.Entry(c,textvariable=self.apikey,show='•',width=60);self.key_entry.pack(fill='x',pady=(7,6))
+        self.key_feedback=tk.StringVar();self.key_feedback_label=self.label(c,'','CardMuted.TLabel',textvariable=self.key_feedback,wraplength=900);self.apikey.trace_add('write',self.update_api_key_hint);self.update_api_key_hint()
         self.label(c,'모델','CardMuted.TLabel');ttk.Entry(c,textvariable=self.model,width=35).pack(anchor='w',pady=(5,12))
         self.label(c,'ChatGPT 구독과 API 요금은 별도입니다. 선택한 챕터 본문만 API로 전송합니다.','CardMuted.TLabel',wraplength=900)
-        row=ttk.Frame(c,style='Card.TFrame');row.pack(fill='x',pady=(12,0));self.action(row,'자료 관리로 돌아가기  →',lambda:self.navigate('docs'),True)
+        row=ttk.Frame(c,style='Card.TFrame');row.pack(fill='x',pady=(12,0));self.action(row,'자료 관리로 돌아가기  →',lambda:self.navigate('docs'),True);self.action(row,'API 키 발급·관리',lambda:__import__('webbrowser').open('https://platform.openai.com/api-keys'))
         c=self.card(self.settings,fill='x',pady=(0,14));self.label(c,'수업 준비 순서','CardTitle.TLabel')
         self.label(c,'1. 자료 관리에서 교재를 등록합니다. 필요한 페이지의 글자는 자동 인식합니다.\n2. 본문을 확인하고 챕터 제목·페이지 범위를 설정합니다.\n3. 챕터를 선택해 문제를 만들고, 문제은행에서 검토·승인합니다.\n4. 퀴즈를 실행합니다. MD 파일을 직접 변환하거나 다시 올릴 필요는 없습니다.','Card.TLabel',wraplength=900,justify='left')
         c=self.card(self.settings,fill='x');self.label(c,'자료 보관과 백업','CardTitle.TLabel');self.label(c,'본문 추출·OCR을 중단해도 완료한 페이지는 다음 실행에서 재사용합니다.\n표·그림·수식과 다단 편집은 원본과 비교해 확인하세요.','CardMuted.TLabel',wraplength=900)

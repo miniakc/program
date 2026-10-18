@@ -3,7 +3,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from core import Store, parse_md, parse_questions, uid
-from pipeline import extract_pdf, generate, Cancelled
+from pipeline import extract_pdf, generate, Cancelled, validate_api_key
 from desktop_ui import WorkspaceUI
 from task_state import TaskState
 
@@ -11,7 +11,7 @@ ROOT=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'.local/share')))/'EMSQu
 
 class App(WorkspaceUI, tk.Tk):
     def __init__(self):
-        super().__init__();self.title('EMS QUIZ · Windows 0.3.0')
+        super().__init__();self.title('EMS QUIZ · Windows 0.3.1')
         width=max(980,min(1320,self.winfo_screenwidth()-40));height=max(680,min(890,self.winfo_screenheight()-70));self.geometry(f'{width}x{height}');self.minsize(980,680)
         self.store=Store(ROOT/'bank.sqlite3');self.events=queue.Queue();self.working=False;self.cancel=threading.Event();self.task=TaskState()
         self.configure_style();self.setup_shell();self.setup_home();self.setup_docs();self.setup_bank();self.setup_settings();self.refresh();self.navigate('home');self.draw_task();self.after(100,self.poll)
@@ -136,10 +136,23 @@ class App(WorkspaceUI, tk.Tk):
             except Cancelled as e:self.events.put(('cancelled',str(e)))
             except Exception as e:self.events.put(('error',str(e)))
         threading.Thread(target=run,daemon=True).start()
+    def update_api_key_hint(self,*args):
+        value=self.apikey.get()
+        if not value.strip():
+            self.key_feedback.set('발급받은 키 값을 붙여넣으세요. 키 이름·설명·ChatGPT 로그인 비밀번호를 넣는 칸이 아닙니다.')
+            self.key_feedback_label.configure(foreground='#73878a');return
+        try:validate_api_key(value)
+        except ValueError as e:
+            self.key_feedback.set(str(e));self.key_feedback_label.configure(foreground='#b35b4c')
+        else:
+            self.key_feedback.set('문자 입력 형식이 확인되었습니다. 실제 키의 유효성·사용 권한은 API 요청 시 확인합니다.')
+            self.key_feedback_label.configure(foreground='#0c8476')
     def generate_dialog(self):
         if self.working:return self.show_busy()
         doc=self.selected_doc();chapter=self.selected_chapter();d=self.store.document(doc)
-        if not self.apikey.get().strip():self.navigate('settings');self.status.set('문제를 만들려면 API 키를 입력한 후 자료 관리로 돌아오세요.');self.draw_task();return
+        try:validate_api_key(self.apikey.get())
+        except ValueError as e:
+            self.navigate('settings');self.update_api_key_hint();self.status.set(str(e));self.draw_task();self.key_entry.focus_set();return
         pages=[p for p in d['pages'] if p['page'] is not None and chapter['start']<=p['page']<=chapter['end']]
         if not any(p['text'].strip() for p in pages):raise ValueError('선택한 챕터에 본문이 없습니다.')
         win=tk.Toplevel(self);win.title('AI 문제 생성');win.geometry('560x310');win.transient(self);win.grab_set()
@@ -149,7 +162,7 @@ class App(WorkspaceUI, tk.Tk):
         def start():
             n=int(count.get())
             if not 1<=n<=100:raise ValueError('문항 수는 1~100개입니다.')
-            key=self.apikey.get().strip();model=self.model.get().strip();win.destroy()
+            key=validate_api_key(self.apikey.get());model=self.model.get().strip();win.destroy()
             if not self.begin_task('AI 문제 생성',d['name']+' · '+chapter['title']):return
             def run():
                 try:
