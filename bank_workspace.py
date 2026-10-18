@@ -11,7 +11,9 @@ UNLINKED='__unlinked__';UNASSIGNED='__unassigned__'
 class BankWorkspace:
     def setup_bank(self):
         self.bank_doc_id=None;self.bank_chapter_id=None;self.bank_level='books'
-        self.heading(self.bank,'QUESTION BANK','수업의 자산이 쌓이는 곳.','교재를 고르고, 하위 챕터에서 문제를 관리하세요.')
+        title=ttk.Frame(self.bank);title.pack(fill='x',pady=(0,10))
+        ttk.Label(title,text='문제은행',font=('맑은 고딕',20,'bold')).pack(side='left')
+        ttk.Label(title,text='교재 → 하위 챕터 → 문제 선택·관리',style='Muted.TLabel').pack(side='left',padx=16)
         self.bank_breadcrumb=ttk.Frame(self.bank);self.bank_breadcrumb.pack(fill='x',pady=(0,8))
         self.bank_toolbar=ttk.Frame(self.bank);self.bank_toolbar.pack(fill='x',pady=(0,10))
         self.action(self.bank_toolbar,'JSON 가져오기',self.import_bank,True,lock=True);self.action(self.bank_toolbar,'직접 작성',lambda:self.editor(None));self.action(self.bank_toolbar,'교재 자료 관리',lambda:self.navigate('docs'),side='right')

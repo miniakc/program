@@ -48,6 +48,7 @@ class WindowsUIFlowTests(unittest.TestCase):
                     window.import_bank()
                 self.assertEqual(len(window.qlist.selection()),3);self.assertFalse(any(q['approved'] for q in window.qrows))
                 window.start_quiz();window.update();self.assertEqual(len(window.quiz),3)
+                window.navigate('bank');window.update();self.assertGreaterEqual(window.qlist.winfo_height(),120);window.navigate('play')
                 # Find each type independent of database tie ordering.
                 for kind in ('객관식','OX','단답형'):
                     window.index=next(i for i,q in enumerate(window.quiz) if q['type']==kind);window.render_quiz();window.update()
