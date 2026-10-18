@@ -270,6 +270,11 @@ def self_test(report):
     Path(report).write_text(json.dumps({'ok':True,'python':sys.version,'frozen':bool(getattr(sys,'frozen',False)),'checks':['pdf_render','korean_english_ocr','scanned_pdf_to_text','database','gui','question_editor','quiz']}),encoding='utf-8')
 
 if __name__=='__main__':
-    if len(sys.argv)==3 and sys.argv[1]=='--self-test':self_test(sys.argv[2])
+    if len(sys.argv)==3 and sys.argv[1]=='--self-test':
+        try:self_test(sys.argv[2])
+        except Exception:
+            import traceback
+            Path(sys.argv[2]).write_text(json.dumps({'ok':False,'error':traceback.format_exc()}),encoding='utf-8')
+            sys.exit(1)
     else:App().mainloop()
 

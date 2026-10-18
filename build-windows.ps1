@@ -14,7 +14,9 @@ if ($LASTEXITCODE -ne 0) { throw '프로그램 빌드 실패' }
 & (Join-Path $PSScriptRoot 'prepare-ocr.ps1')
 $SmokeReport = Join-Path $PSScriptRoot 'dist\bundle-smoke.json'
 if (Test-Path $SmokeReport) { Remove-Item $SmokeReport }
-$Smoke = Start-Process -FilePath (Join-Path $PSScriptRoot 'dist\EMSQuiz\EMSQuiz.exe') -ArgumentList @('--self-test', ('"' + $SmokeReport + '"')) -Wait -PassThru
+$Smoke = Start-Process -FilePath (Join-Path $PSScriptRoot 'dist\EMSQuiz\EMSQuiz.exe') -ArgumentList @('--self-test', ('"' + $SmokeReport + '"')) -PassThru
+if (-not $Smoke.WaitForExit(180000)) { Stop-Process -Id $Smoke.Id -Force; throw '번들 검사 시간 초과' }
+if (Test-Path $SmokeReport) { Get-Content $SmokeReport -Raw }
 if ($Smoke.ExitCode -ne 0 -or -not (Test-Path $SmokeReport)) { throw '번들 실행 검사 실패' }
 $SmokeResult = Get-Content $SmokeReport -Raw | ConvertFrom-Json
 if (-not $SmokeResult.ok -or -not $SmokeResult.frozen) { throw 'Python 포함 번들 검사 실패' }
@@ -55,7 +57,9 @@ $OldPath = $env:PATH
 try {
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
     $Report = Join-Path $PSScriptRoot 'dist\installed-smoke.json'
-    $Installed = Start-Process -FilePath (Join-Path $InstalledDir 'EMSQuiz.exe') -ArgumentList @('--self-test', ('"' + $Report + '"')) -Wait -PassThru
+    $Installed = Start-Process -FilePath (Join-Path $InstalledDir 'EMSQuiz.exe') -ArgumentList @('--self-test', ('"' + $Report + '"')) -PassThru
+    if (-not $Installed.WaitForExit(180000)) { Stop-Process -Id $Installed.Id -Force; throw '설치된 EXE 검사 시간 초과' }
+    if (Test-Path $Report) { Get-Content $Report -Raw }
     if ($Installed.ExitCode -ne 0 -or -not (Test-Path $Report)) { throw '설치된 EXE 실행 시험 실패' }
 } finally { $env:PATH = $OldPath }
 $Uninstall = Start-Process -FilePath (Join-Path $InstalledDir 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
