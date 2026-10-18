@@ -34,4 +34,5 @@ class WindowsUIFlowTests(unittest.TestCase):
                 self.assertEqual(str(window.generate_button.cget('state')),'disabled')
                 # Main next-action bar must remain mapped even in a smaller desktop window.
                 self.assertTrue(window.nextstep.winfo_ismapped());self.assertLess(window.nextstep.winfo_rooty(),window.job_box.winfo_rooty())
+                window.navigate('bank');window.update();self.assertTrue(window.bank_quiz_button.winfo_ismapped());self.assertLess(window.bank_quiz_button.winfo_rooty(),window.job_box.winfo_rooty())
             finally:window.store.db.close();window.destroy()

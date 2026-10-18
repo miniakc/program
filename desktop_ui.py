@@ -28,7 +28,7 @@ class WorkspaceUI:
         st.configure('Treeview',background=WHITE,fieldbackground=WHITE,bordercolor=LINE,rowheight=39,font=('맑은 고딕',10))
         st.configure('Treeview.Heading',background='#eff5f1',foreground='#55786b',font=('맑은 고딕',9,'bold'),padding=9,relief='flat')
         st.map('Treeview',background=[('selected','#e0f1e7')],foreground=[('selected','#126851')])
-        st.configure('Workspace.TNotebook',background=BG,borderwidth=0);st.layout('Workspace.TNotebook.Tab',[])
+        st.configure('Workspace.TNotebook',background=BG,borderwidth=0,bordercolor=BG,lightcolor=BG,darkcolor=BG);st.layout('Workspace.TNotebook.Tab',[])
         st.configure('Job.Horizontal.TProgressbar',background=TEAL,troughcolor='#e7efeb',bordercolor='#e7efeb',lightcolor=TEAL,darkcolor=TEAL,thickness=8)
     def action(self,parent,text,fn,primary=False,lock=False,side='left'):
         b=ttk.Button(parent,text=text,style='Primary.TButton' if primary else 'TButton',command=lambda:self.safe(fn))
@@ -36,7 +36,10 @@ class WorkspaceUI:
         if lock:self.task_controls.append(b)
         return b
     def label(self,parent,text,style='Card.TLabel',**kw):
-        w=ttk.Label(parent,text=text,style=style,**kw);w.pack(anchor='w');return w
+        w=ttk.Label(parent,text=text,style=style,**kw);w.pack(anchor='w')
+        if 'wraplength' in kw:
+            parent.bind('<Configure>',lambda e,l=w,limit=kw['wraplength']:l.configure(wraplength=max(180,min(limit,e.width-25))),add='+')
+        return w
     def card(self,parent,**pack):
         w=ttk.Frame(parent,style='Card.TFrame',padding=18);w.pack(**pack);return w
     def heading(self,parent,tag,title,description,button=None):
@@ -174,7 +177,7 @@ class WorkspaceUI:
             rail.columnconfigure(i,weight=1);ttk.Label(rail,text=f'0{i+1}   {text}',background=PALE,foreground='#377963',padding=(12,9),font=('맑은 고딕',10,'bold')).grid(row=0,column=i,sticky='ew',padx=(0,6 if i<3 else 0))
         line=ttk.Frame(self.docs);line.pack(fill='x',pady=(0,8));self.doclist=ttk.Combobox(line,state='readonly');self.doclist.pack(side='left',fill='x',expand=True);self.doclist.bind('<<ComboboxSelected>>',lambda e:self.show_doc())
         self.action(line,'원본 열기',self.open_original,side='right')
-        self.doc_summary=ttk.Label(self.docs,text='교재를 추가해 주세요.',style='Muted.TLabel',wraplength=1000);self.doc_summary.pack(anchor='w',pady=(0,10))
+        self.doc_summary=ttk.Label(self.docs,text='교재를 추가해 주세요.',style='Muted.TLabel',wraplength=1000);self.doc_summary.pack(anchor='w',pady=(0,10));self.docs.bind('<Configure>',lambda e:self.doc_summary.configure(wraplength=max(250,e.width-25)),add='+')
         pan=ttk.Panedwindow(self.docs,orient='horizontal');pan.pack(fill='both',expand=True)
         def size_pan(event):
             if event.width>400 and not getattr(pan,'initialized',False):
@@ -202,6 +205,7 @@ class WorkspaceUI:
         self.chapter_add_button=self.action(right,'챕터 추가',self.add_chapter,lock=True)
         self.nextstep=ttk.Frame(self.docs);self.nextstep.pack(fill='x',pady=(0,12),before=pan);self.next_hint=ttk.Label(self.nextstep,text='다음 단계: 교재를 추가하세요.',foreground=TEAL,wraplength=700);self.next_hint.pack(side='left')
         self.generate_button=self.action(self.nextstep,'문제 만들기  →',self.generate_dialog,True,lock=True,side='right')
+        self.nextstep.bind('<Configure>',lambda e:self.next_hint.configure(wraplength=max(180,e.width-200)))
     def update_next_step(self):
         if not hasattr(self,'next_hint'):return
         ready=bool(self.chapters.selection());hasdoc=bool(getattr(self,'docrows',[]))
@@ -221,13 +225,13 @@ class WorkspaceUI:
         bar=ttk.Frame(self.bank);bar.pack(fill='x',pady=(0,12))
         self.action(bar,'문제 가져오기 (JSON·MD)',self.import_bank,lock=True);self.action(bar,'직접 작성',lambda:self.editor(None),lock=True)
         self.action(bar,'선택 검토',self.edit_selected);self.action(bar,'선택 삭제',self.delete_selected,lock=True);self.action(bar,'JSON 저장',self.export_bank)
-        filters=ttk.Frame(self.bank);filters.pack(fill='x',pady=(0,12));self.search=tk.StringVar();ttk.Entry(filters,textvariable=self.search).pack(side='left',fill='x',expand=True);self.search.trace_add('write',lambda *a:self.refresh_bank());self.onlydraft=tk.BooleanVar();ttk.Checkbutton(filters,text='검토 전만 보기',variable=self.onlydraft,command=self.refresh_bank).pack(side='right',padx=12)
+        filters=ttk.Frame(self.bank);filters.pack(fill='x',pady=(0,12));ttk.Label(filters,text='문제 검색',style='Muted.TLabel').pack(side='left',padx=(0,10));self.search=tk.StringVar();ttk.Entry(filters,textvariable=self.search).pack(side='left',fill='x',expand=True);self.search.trace_add('write',lambda *a:self.refresh_bank());self.onlydraft=tk.BooleanVar();ttk.Checkbutton(filters,text='검토 전만 보기',variable=self.onlydraft,command=self.refresh_bank).pack(side='right',padx=12)
         self.bank_count=ttk.Label(self.bank,text='',style='Muted.TLabel');self.bank_count.pack(anchor='w',pady=(0,8))
         frame=ttk.Frame(self.bank);frame.pack(fill='both',expand=True)
         self.qlist=ttk.Treeview(frame,columns=('state','topic','stem'),show='headings',selectmode='extended')
         for key,title,width in [('state','상태',80),('topic','챕터 / 주제',140),('stem','문제',550)]:self.qlist.heading(key,text=title);self.qlist.column(key,width=width,stretch=key=='stem')
         self.qlist.pack(side='left',fill='both',expand=True);scroll=ttk.Scrollbar(frame,orient='vertical',command=self.qlist.yview);scroll.pack(side='right',fill='y');self.qlist.configure(yscrollcommand=scroll.set);self.qlist.bind('<Double-1>',lambda e:self.safe(self.edit_selected))
-        row=ttk.Frame(self.bank);row.pack(fill='x',pady=12);self.action(row,'승인된 문제로 퀴즈 시작  →',self.start_quiz,True,side='right')
+        row=ttk.Frame(self.bank);row.pack(side='bottom',fill='x',pady=(10,0),before=frame);self.bank_quiz_button=self.action(row,'승인된 문제로 퀴즈 시작  →',self.start_quiz,True,side='right')
         self.heading(self.play,'CLASSROOM QUIZ','함께 풀며 배우는 시간.','검토를 마친 객관식 문제 중 최대 10개로 수업을 시작합니다.')
         row=ttk.Frame(self.play);row.pack(fill='x');self.action(row,'퀴즈 시작',self.start_quiz,True)
         self.quizframe=ttk.Frame(self.play,style='Card.TFrame',padding=20);self.quizframe.pack(fill='both',expand=True,pady=15)
@@ -238,7 +242,8 @@ class WorkspaceUI:
         self.apikey=tk.StringVar();self.model=tk.StringVar(value='gpt-5-mini');ttk.Entry(c,textvariable=self.apikey,show='•',width=60).pack(fill='x',pady=(7,12))
         self.label(c,'모델','CardMuted.TLabel');ttk.Entry(c,textvariable=self.model,width=35).pack(anchor='w',pady=(5,12))
         self.label(c,'ChatGPT 구독과 API 요금은 별도입니다. 선택한 챕터 본문만 API로 전송합니다.','CardMuted.TLabel',wraplength=900)
+        row=ttk.Frame(c,style='Card.TFrame');row.pack(fill='x',pady=(12,0));self.action(row,'자료 관리로 돌아가기  →',lambda:self.navigate('docs'),True)
         c=self.card(self.settings,fill='x',pady=(0,14));self.label(c,'수업 준비 순서','CardTitle.TLabel')
         self.label(c,'1. 자료 관리에서 교재를 등록합니다. 필요한 페이지의 글자는 자동 인식합니다.\n2. 본문을 확인하고 챕터 제목·페이지 범위를 설정합니다.\n3. 챕터를 선택해 문제를 만들고, 문제은행에서 검토·승인합니다.\n4. 퀴즈를 실행합니다. MD 파일을 직접 변환하거나 다시 올릴 필요는 없습니다.','Card.TLabel',wraplength=900,justify='left')
         c=self.card(self.settings,fill='x');self.label(c,'자료 보관과 백업','CardTitle.TLabel');self.label(c,'본문 추출·OCR을 중단해도 완료한 페이지는 다음 실행에서 재사용합니다.\n표·그림·수식과 다단 편집은 원본과 비교해 확인하세요.','CardMuted.TLabel',wraplength=900)
-        row=ttk.Frame(c,style='Card.TFrame');row.pack(fill='x',pady=(12,0));self.action(row,'전체 백업 ZIP 저장',self.backup,lock=True);self.action(row,'외부 AI용 출제 요청 저장',self.export_prompt,lock=True);self.action(row,'자료 관리로 돌아가기  →',lambda:self.navigate('docs'),True)
+        row=ttk.Frame(c,style='Card.TFrame');row.pack(fill='x',pady=(12,0));self.action(row,'전체 백업 ZIP 저장',self.backup,lock=True);self.action(row,'외부 AI용 출제 요청 저장',self.export_prompt,lock=True)
