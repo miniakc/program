@@ -22,7 +22,7 @@ class QuizCountdown:
     def start(self):self.deadline=self.clock()+10
     def stop(self):self.deadline=None
     @property
-    def remaining(self):return max(0,math.ceil(self.deadline-self.clock())) if self.deadline is not None else None
+    def remaining(self):return min(10,max(0,math.ceil(self.deadline-self.clock()))) if self.deadline is not None else None
 
 class AssetStore:
     def __init__(self,root):self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)

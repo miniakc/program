@@ -62,6 +62,9 @@ class ExchangeTests(unittest.TestCase):
             self.assertIn('xl/media/image1.png',z.namelist());self.assertIn('xl/worksheets/sheet2.xml',z.namelist())
             drawing=E.fromstring(z.read('xl/drawings/drawing1.xml'));self.assertEqual(drawing.find('.//d:from/d:row',ns).text,'1')
             self.assertIn('이미지 파일 없음',z.read('xl/worksheets/sheet2.xml').decode())
+    def test_countdown_never_displays_eleven_on_clock_rounding(self):
+        timer=QuizCountdown(lambda:100.0);timer.deadline=110.0000000001
+        self.assertEqual(timer.remaining,10)
     def test_countdown_wall_clock_and_reset(self):
         current=[100.0];timer=QuizCountdown(lambda:current[0]);self.assertIsNone(timer.remaining)
         timer.start();self.assertEqual(timer.remaining,10);current[0]+=3.2;self.assertEqual(timer.remaining,7)
