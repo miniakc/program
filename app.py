@@ -3,7 +3,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from core import Store, parse_md, parse_questions, uid
-from pipeline import extract_pdf, generate, Cancelled, validate_api_key
+from pipeline import extract_pdf, Cancelled
+from exchange import AssetStore, QuizCountdown, PROMPT, markdown, export_bundle, export_xlsx, answer_text
 from desktop_ui import WorkspaceUI
 from task_state import TaskState
 
@@ -11,17 +12,19 @@ ROOT=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'.local/share')))/'EMSQu
 
 class App(WorkspaceUI, tk.Tk):
     def __init__(self):
-        super().__init__();self.title('EMS QUIZ · Windows 0.3.1')
+        super().__init__();self.title('EMS QUIZ · Windows 0.4.0')
         width=max(980,min(1320,self.winfo_screenwidth()-40));height=max(680,min(890,self.winfo_screenheight()-70));self.geometry(f'{width}x{height}');self.minsize(980,680)
         self.store=Store(ROOT/'bank.sqlite3');self.events=queue.Queue();self.working=False;self.cancel=threading.Event();self.task=TaskState()
+        self.assets=AssetStore(ROOT/'assets');self.countdown=QuizCountdown();self.timer_job=None
         self.configure_style();self.setup_shell();self.setup_home();self.setup_docs();self.setup_bank();self.setup_settings();self.refresh();self.navigate('home');self.draw_task();self.after(100,self.poll)
         self.protocol('WM_DELETE_WINDOW',self.close)
+        self.bind('<Left>',lambda e:self.quiz_key(e,-1));self.bind('<Right>',lambda e:self.quiz_key(e,1));self.bind('<space>',lambda e:self.quiz_key(e,0))
     def begin_task(self,name,filename=''):
         if self.working:self.show_busy();return False
         self.working=True;self.cancel.clear();self.status.set('');self.task.begin(name,filename);self.draw_task();self.update_idletasks();return True
     def finish_task(self,detail):
         self.working=False;self.task.finish(detail);self.status.set('')
-        self.status.set('다음 단계: 자료 관리에서 챕터를 설정하고 문제를 만드세요.' if self.task.name in ('교재 등록','글자 다시 인식') else '문제은행에서 정답·해설을 검토하고 승인하세요.')
+        self.status.set('다음: MD·이미지 ZIP 저장 → GPT에서 출제 → JSON 가져오기 → 퀴즈 실행')
         self.draw_task();self.update_next_step()
     def show_busy(self):
         self.status.set(f'진행 중인 작업: {self.task.name} · {self.task.filename} · {self.task.phase}. 아래 진행 상태를 확인하세요.');self.draw_task()
@@ -30,7 +33,7 @@ class App(WorkspaceUI, tk.Tk):
     def close(self):
         if self.working:
             self.show_busy();self.status.set('종료하려면 아래 작업 중단 버튼을 누르고 중단 완료 후 닫아주세요.');self.draw_task();return
-        self.store.db.close();self.destroy()
+        self.stop_countdown();self.store.db.close();self.destroy()
     def safe(self,fn):
         try:return fn()
         except Exception as e:messagebox.showerror('확인 필요',str(e))
@@ -54,7 +57,7 @@ class App(WorkspaceUI, tk.Tk):
         d=self.store.document(self.selected_doc());self.visible_pages=d['pages'];self.has_page_mapping=all(p['page'] is not None for p in d['pages']);self.pagepick['values']=[f"PDF {p['page']}쪽" if p['page'] is not None else f'본문 {i+1} (페이지 정보 없음)' for i,p in enumerate(d['pages'])]
         if d['pages']:self.pagepick.current(0)
         self.show_page();blank=sum(not p['text'].strip() for p in d['pages']);ocr=sum(p.get('method')=='ocr' for p in d['pages'])
-        self.doc_summary.configure(text=f"본문 {len(d['pages'])}쪽 저장됨 · OCR 인식 {ocr}쪽 · 빈 본문 {blank}쪽. 본문을 확인하고 오른쪽에서 챕터를 설정하세요.")
+        self.doc_summary.configure(text=f"본문 {len(d['pages'])}쪽 저장됨 · OCR 인식 {ocr}쪽 · 빈 본문 {blank}쪽. 본문 확인 후 MD·이미지 ZIP을 저장하세요. 챕터 설정은 선택 사항입니다.")
         selected=self.chapters.selection();self.chapters.delete(*self.chapters.get_children())
         for c in self.store.chapters(d['id']):self.chapters.insert('', 'end',iid=c['id'],values=(c['title'],f"{c['start']}–{c['end']}"))
         ids=self.chapters.get_children()
@@ -68,7 +71,7 @@ class App(WorkspaceUI, tk.Tk):
         doc=self.selected_doc();title=self.ct.get();start=int(self.cs.get());end=int(self.ce.get())
         self.store.add_chapter(doc,title,start,end);self.ct.set('');self.show_doc()
         c=next(c for c in self.store.chapters(doc) if c['title']==title.strip() and c['start']==start and c['end']==end)
-        self.chapters.selection_set(c['id']);self.update_next_step();self.refresh_home();self.status.set('챕터를 추가했습니다. 오른쪽 아래 문제 만들기로 이어가세요.');self.draw_task()
+        self.chapters.selection_set(c['id']);self.update_next_step();self.refresh_home();self.status.set('챕터를 추가했습니다. MD·이미지 ZIP을 저장하고 GPT에 출제 범위를 지정하세요.');self.draw_task()
     def open_original(self):
         d=self.store.document(self.selected_doc());path=Path(d['original'])
         if not path.is_file():raise ValueError('원본 파일을 찾을 수 없습니다.')
@@ -89,6 +92,9 @@ class App(WorkspaceUI, tk.Tk):
                 else:pages=extract_pdf(p,ROOT/'jobs'/'extract',self.cancel,lambda msg:self.events.put(('status',msg)))
                 if not pages:raise ValueError('페이지가 없습니다.')
                 if self.cancel.is_set():raise Cancelled('교재 등록을 중단했습니다. 완료한 PDF 페이지는 다시 등록할 때 재사용합니다.')
+                if p.suffix.lower()=='.pdf':
+                    import hashlib
+                    self.assets.extract(p,hashlib.sha256(raw).hexdigest(),self.cancel,lambda msg:self.events.put(('status',msg)))
                 self.events.put(('doc',(p.name,raw,pages,path)))
             except Cancelled as e:self.events.put(('cancelled',str(e)))
             except Exception as e:self.events.put(('error',str(e)))
@@ -98,11 +104,8 @@ class App(WorkspaceUI, tk.Tk):
         elif kind in ('error','cancelled'):
             self.working=False;self.task.end(kind,data);self.status.set('완료 구간은 저장되어 있습니다. 같은 작업을 다시 실행하면 재사용합니다.' if kind=='cancelled' else '아래 오류 내용을 확인한 뒤 같은 작업을 다시 실행할 수 있습니다.')
             if kind=='error':messagebox.showerror(self.task.name+' 실패',data)
-        elif kind=='generated':
-            qs,usage,doc,chapter=data
-            for q in qs:q.update(doc_id=doc,chapter_id=chapter,source=self.store.document(doc)['name'])
-            n=self.store.import_questions(qs);self.refresh_bank();self.refresh_home();self.navigate('bank')
-            self.finish_task(f'{n}문제를 검토함에 저장했습니다. 원문·정답·해설을 확인하고 승인하세요.');self.status.set(f'입력 {usage.get("input_tokens",0):,} / 출력 {usage.get("output_tokens",0):,}토큰 · 완료 구간 재사용 포함')
+        elif kind=='exported':
+            self.finish_task('MD·이미지 저장 완료');self.status.set('저장 위치: '+str(data)+' · ZIP은 압축 해제 후, MD·필요한 그림을 GPT에 함께 첨부하세요. 완성된 JSON은 문제은행에서 가져오세요.')
         elif kind=='reocr':
             doc,pages=data;self.store.update_pages(doc,pages);self.show_doc();self.refresh_bank();self.refresh_home()
             self.finish_task('인식한 본문을 저장했습니다. 연결된 문제는 근거 재검토 대상으로 변경했습니다.')
@@ -113,8 +116,8 @@ class App(WorkspaceUI, tk.Tk):
             original=ROOT/'originals'/(hashlib.sha256(raw).hexdigest()+Path(name).suffix.lower());original.parent.mkdir(parents=True,exist_ok=True);original.write_bytes(raw)
             id,added=self.store.add_document(name,raw,pages,str(original));self.refresh(select_doc=id);self.navigate('docs')
             blank=sum(not p['text'].strip() for p in pages)
-            self.finish_task(('교재를 등록했습니다.' if added else '이미 등록된 교재를 열었습니다.')+' 본문은 자동 저장되며 MD를 다시 올릴 필요가 없습니다.')
-            self.status.set(f'다음: 본문 확인 → 오른쪽 챕터 범위 설정 → 문제 만들기.{f" 빈 본문 {blank}쪽은 원본을 확인하세요." if blank else ""}')
+            self.finish_task(('교재를 등록했습니다.' if added else '이미 등록된 교재를 열었습니다.')+' MD·이미지 ZIP을 저장하여 GPT에 첨부하세요.')
+            self.status.set(f'다음: MD·이미지 ZIP 저장 → 압축 해제 → MD와 필요한 이미지를 GPT에 첨부.{f" 빈 본문 {blank}쪽은 원본을 확인하세요." if blank else ""}')
         self.draw_task();self.update_next_step()
     def poll(self):
         try:
@@ -136,64 +139,65 @@ class App(WorkspaceUI, tk.Tk):
             except Cancelled as e:self.events.put(('cancelled',str(e)))
             except Exception as e:self.events.put(('error',str(e)))
         threading.Thread(target=run,daemon=True).start()
-    def update_api_key_hint(self,*args):
-        value=self.apikey.get()
-        if not value.strip():
-            self.key_feedback.set('발급받은 키 값을 붙여넣으세요. 키 이름·설명·ChatGPT 로그인 비밀번호를 넣는 칸이 아닙니다.')
-            self.key_feedback_label.configure(foreground='#73878a');return
-        try:validate_api_key(value)
-        except ValueError as e:
-            self.key_feedback.set(str(e));self.key_feedback_label.configure(foreground='#b35b4c')
-        else:
-            self.key_feedback.set('문자 입력 형식이 확인되었습니다. 실제 키의 유효성·사용 권한은 API 요청 시 확인합니다.')
-            self.key_feedback_label.configure(foreground='#0c8476')
-    def generate_dialog(self):
+    def export_md(self):self.export_material(md_only=True)
+    def export_material(self,md_only=False):
         if self.working:return self.show_busy()
-        doc=self.selected_doc();chapter=self.selected_chapter();d=self.store.document(doc)
-        try:validate_api_key(self.apikey.get())
-        except ValueError as e:
-            self.navigate('settings');self.update_api_key_hint();self.status.set(str(e));self.draw_task();self.key_entry.focus_set();return
-        pages=[p for p in d['pages'] if p['page'] is not None and chapter['start']<=p['page']<=chapter['end']]
-        if not any(p['text'].strip() for p in pages):raise ValueError('선택한 챕터에 본문이 없습니다.')
-        win=tk.Toplevel(self);win.title('AI 문제 생성');win.geometry('560x310');win.transient(self);win.grab_set()
-        ttk.Label(win,text=f"{d['name']}\n{chapter['title']} · PDF {chapter['start']}–{chapter['end']}쪽",wraplength=520,padding=15).pack(anchor='w')
-        ttk.Label(win,text='선택한 본문을 OpenAI API로 전송합니다. API 이용료가 발생합니다.\n교재 안의 내용만으로 생성하며 최신 외부 지침 검색은 수행하지 않습니다.',wraplength=520,padding=15).pack(anchor='w')
-        count=tk.StringVar(value='10');ttk.Label(win,text='최대 문항 수 (1–100)').pack();ttk.Spinbox(win,from_=1,to=100,textvariable=count,width=8).pack()
-        def start():
-            n=int(count.get())
-            if not 1<=n<=100:raise ValueError('문항 수는 1~100개입니다.')
-            key=validate_api_key(self.apikey.get());model=self.model.get().strip();win.destroy()
-            if not self.begin_task('AI 문제 생성',d['name']+' · '+chapter['title']):return
-            def run():
-                try:
-                    qs,usage=generate(pages,n,model,key,chapter['title'],d['name'],ROOT/'jobs'/'generate',self.cancel,lambda msg:self.events.put(('status',msg)))
-                    self.events.put(('generated',(qs,usage,doc,chapter['id'])))
-                except Cancelled as e:self.events.put(('cancelled',str(e)))
-                except Exception as e:self.events.put(('error',str(e)))
-            threading.Thread(target=run,daemon=True).start()
-        ttk.Button(win,text='원문 전송·문제 생성',command=lambda:self.safe(start)).pack(pady=15)
-    def export_md(self):
-        d=self.store.document(self.selected_doc());path=filedialog.asksaveasfilename(defaultextension='.md',initialfile=Path(d['name']).stem+'.md')
-        if path:Path(path).write_text('\n\n'.join((f"<!-- PDF_PAGE: {p['page']} -->\n\n" if p['page'] else '')+p['text'] for p in d['pages']),encoding='utf-8');self.status.set('MD 내보내기 완료')
+        d=self.store.document(self.selected_doc());suffix='.md' if md_only else '.zip'
+        path=filedialog.asksaveasfilename(defaultextension=suffix,initialfile=Path(d['name']).stem+('_MD_이미지' if not md_only else '')+suffix,filetypes=[('Markdown' if md_only else '교재 자료 ZIP','*'+suffix)])
+        if not path:return
+        if not self.begin_task('MD·이미지 저장',d['name']):return
+        def run():
+            try:
+                entries=self.assets.entries(d['digest']);original=Path(d['original'])
+                if original.suffix.lower()=='.pdf':entries=self.assets.extract(original,d['digest'],self.cancel,lambda msg:self.events.put(('status',msg)))
+                if self.cancel.is_set():raise Cancelled('자료 저장을 중단했습니다.')
+                if md_only:
+                    folder=Path(path).parent/'images';folder.mkdir(exist_ok=True)
+                    for e in entries:
+                        src=self.assets.resolve(e['id'])
+                        if not src:raise ValueError('이미지 파일 없음: '+e['id'])
+                        if src.resolve()!=(folder/e['id']).resolve():shutil.copy2(src,folder/e['id'])
+                    Path(path).write_text(markdown(d,entries),encoding='utf-8')
+                else:export_bundle(path,d,self.assets,entries)
+                self.events.put(('exported',path))
+            except Cancelled as e:self.events.put(('cancelled',str(e)))
+            except Exception as e:self.events.put(('error',str(e)))
+        threading.Thread(target=run,daemon=True).start()
     def export_prompt(self):
-        prompt=self.store.prompt(self.selected_doc(),self.selected_chapter());path=filedialog.asksaveasfilename(defaultextension='.md',initialfile='문제생성_요청.md')
-        if path:Path(path).write_text(prompt,encoding='utf-8');self.status.set('출제 요청 저장 완료 · 외부 AI에서 생성한 JSON을 가져오세요.')
+        path=filedialog.asksaveasfilename(defaultextension='.txt',initialfile='GPT_출제요청.txt')
+        if path:Path(path).write_text(PROMPT,encoding='utf-8');self.status.set('출제 요청 저장 완료 · MD와 필요한 이미지를 함께 GPT에 첨부하세요.');self.draw_task()
+    def import_assets(self):
+        if self.working:return self.show_busy()
+        path=filedialog.askopenfilename(filetypes=[('교재 자료 ZIP','*.zip')])
+        if path:
+            n=self.assets.import_zip(path);self.status.set(f'이미지 {n}개 가져오기 완료. JSON의 파일명과 일치하면 문제에 표시됩니다.');self.draw_task()
+    def selected_questions(self):
+        ids=set(self.qlist.selection() or self.qlist.get_children())
+        return [q for q in self.qrows if q['id'] in ids]
+    def export_excel(self):
+        qs=self.selected_questions()
+        if not qs:raise ValueError('내보낼 문제가 없습니다.')
+        path=filedialog.asksaveasfilename(defaultextension='.xlsx',initialfile='EMS_문제은행.xlsx',filetypes=[('Excel 통합 문서','*.xlsx')])
+        if path:export_xlsx(path,qs);self.status.set(f'{len(qs)}문제 Excel 저장 완료 · 이미지 파일명과 출처 포함');self.draw_task()
     def refresh_bank(self):
         if not hasattr(self,'qlist'):return
         self.qlist.delete(*self.qlist.get_children());self.qrows=self.store.questions()
         for q in self.qrows:
             if self.onlydraft.get() and q['approved']:continue
             if self.search.get().casefold() not in (q['stem']+' '+q.get('topic','')+' '+q['concept']).casefold():continue
-            self.qlist.insert('','end',iid=q['id'],values=('사용 가능' if q['approved'] else '검토 전',q.get('topic',''),q['stem']))
+            self.qlist.insert('','end',iid=q['id'],values=('검토 완료' if q['approved'] else '검토 전',q.get('topic',''),q['stem']))
         if hasattr(self,'bank_count'):self.bank_count.configure(text=f'전체 {len(self.qrows)}문제 · 검색 결과 {len(self.qlist.get_children())}문제')
     def import_bank(self):
         path=filedialog.askopenfilename(filetypes=[('문제 파일','*.json *.md')])
         if not path:return
         qs=parse_questions(Path(path).read_text(encoding='utf-8-sig'))
-        if self.docrows and messagebox.askyesno('근거 연결','교재 관리에서 현재 선택한 교재·챕터를 근거로 연결할까요?'):
-            doc=self.selected_doc();chapter=self.selected_chapter()
-            for q in qs:q.update(doc_id=doc,chapter_id=chapter['id'])
-        n=self.store.import_questions(qs);self.refresh_bank();self.refresh_home();self.status.set(f'{n}문제 등록 · {len(qs)-n}개 동일 지문 제외')
+        previous={q['id'] for q in self.store.questions()};n=self.store.import_questions(qs)
+        self.search.set('');self.onlydraft.set(False);self.refresh_bank();self.refresh_home();self.navigate('bank')
+        incoming=[q['id'] for q in self.qrows if q['id'] not in previous]
+        if incoming:self.qlist.selection_set(incoming);self.qlist.see(incoming[0])
+        missing=sorted({name for q in qs for name in q.get('images',[]) if not self.assets.resolve(name)})
+        self.status.set(f'{n}문제 등록 · {len(qs)-n}개 동일 지문 제외. 선택 문제 바로 풀기를 누르세요.');self.draw_task()
+        if missing:messagebox.showwarning('연결할 이미지 없음',f'{len(missing)}개 그림을 찾을 수 없습니다. 사용안내에서 교재 이미지 ZIP을 가져오거나 문제 수정에서 그림을 첨부하세요.\n\n'+'\n'.join(missing[:8]))
     def edit_selected(self):
         ids=self.qlist.selection()
         if len(ids)!=1:raise ValueError('검토할 문제 하나를 선택하세요.')
@@ -203,13 +207,15 @@ class App(WorkspaceUI, tk.Tk):
         if not ids:raise ValueError('삭제할 문제를 선택하세요.')
         if messagebox.askyesno('선택 삭제',f'{len(ids)}개 문제를 삭제할까요?'):self.store.delete(ids);self.refresh_bank();self.refresh_home()
     def export_bank(self):
-        ids=self.qlist.selection();qs=[q for q in self.qrows if not ids or q['id'] in ids]
+        qs=self.selected_questions()
         path=filedialog.asksaveasfilename(defaultextension='.json',initialfile='EMS_문제은행.json')
         if path:Path(path).write_text(json.dumps({'questions':qs},ensure_ascii=False,indent=2),encoding='utf-8')
     def editor(self,question):
         q=dict(question or {'id':uid(),'stem':'','concept':'','topic':'','options':['']*4,'correct':0,'explanation':'','approved':False})
         win=tk.Toplevel(self);win.title('문제 검토·수정');win.geometry('1000x700');win.transient(self);win.grab_set()
         panes=ttk.Panedwindow(win,orient='horizontal');panes.pack(fill='both',expand=True,padx=15,pady=15);left=ttk.Frame(panes);right=ttk.Frame(panes);panes.add(left,weight=1);panes.add(right,weight=1)
+        right_host=right;canvas=tk.Canvas(right_host,bg='#f6f8f8',highlightthickness=0);scroll=ttk.Scrollbar(right_host,orient='vertical',command=canvas.yview);scroll.pack(side='right',fill='y');canvas.pack(side='left',fill='both',expand=True);canvas.configure(yscrollcommand=scroll.set)
+        right=ttk.Frame(canvas);item=canvas.create_window((0,0),window=right,anchor='nw');canvas.bind('<Configure>',lambda e:canvas.itemconfigure(item,width=e.width));right.bind('<Configure>',lambda e:canvas.configure(scrollregion=canvas.bbox('all')))
         ttk.Label(left,text='근거 원문',font=('맑은 고딕',14,'bold')).pack(anchor='w');evidence=tk.Text(left,wrap='word',bg='white',fg='#20343e',font=('맑은 고딕',10),relief='flat');evidence.pack(fill='both',expand=True)
         text=self.store.evidence(q)
         if q.get('doc_id'):
@@ -219,30 +225,96 @@ class App(WorkspaceUI, tk.Tk):
         fields={}
         for key,label in [('topic','챕터 / 주제'),('concept','학습목표'),('stem','문제')]:
             ttk.Label(right,text=label).pack(anchor='w');v=tk.StringVar(value=q.get(key,''));fields[key]=v;ttk.Entry(right,textvariable=v).pack(fill='x',pady=3)
-        answer=tk.IntVar(value=q['correct']);options=[]
-        for i,opt in enumerate(q['options']):
+        kind=tk.StringVar(value=q.get('type','객관식'));ttk.Label(right,text='유형').pack(anchor='w');ttk.Combobox(right,textvariable=kind,values=['객관식','OX','단답형'],state='readonly').pack(fill='x')
+        ttk.Label(right,text='객관식은 아래 선택지·정답 번호, OX·단답형은 정답 입력란을 사용합니다.',wraplength=440).pack(anchor='w')
+        answer=tk.IntVar(value=q.get('correct',0));options=[]
+        for i,opt in enumerate((q.get('options',[])+['']*4)[:4]):
             row=ttk.Frame(right);row.pack(fill='x',pady=3);ttk.Radiobutton(row,text=str(i+1),variable=answer,value=i).pack(side='left');v=tk.StringVar(value=opt);options.append(v);ttk.Entry(row,textvariable=v).pack(fill='x',expand=True)
+        typed=tk.StringVar(value=q.get('answer',''));ttk.Label(right,text='OX(O 또는 X) · 단답형 정답').pack(anchor='w');ttk.Entry(right,textvariable=typed).pack(fill='x')
+        images=list(q.get('images',[]));image_names=tk.StringVar(value=', '.join(images) or '첨부 이미지 없음')
+        ttk.Label(left,textvariable=image_names,wraplength=420).pack(anchor='w')
+        row=ttk.Frame(left);row.pack(fill='x')
+        def attach():
+            path=filedialog.askopenfilename(filetypes=[('이미지','*.png *.jpg *.jpeg')])
+            if path:
+                name=self.assets.attach(path)
+                if name not in images:images.append(name)
+                image_names.set(', '.join(images))
+        ttk.Button(row,text='문제 그림 첨부',command=lambda:self.safe(attach)).pack(side='left')
+        ttk.Button(row,text='그림 연결 모두 해제',command=lambda:(images.clear(),image_names.set('첨부 이미지 없음'))).pack(side='left')
         ttk.Label(right,text='정답·오답 해설').pack(anchor='w');ex=tk.Text(right,height=8,wrap='word',bg='white',fg='#20343e',font=('맑은 고딕',10),relief='flat');ex.insert('1.0',q['explanation']);ex.pack(fill='both',expand=True)
-        approved=tk.BooleanVar(value=q['approved']);ttk.Checkbutton(right,text='정답·해설·원문을 검토했고 퀴즈 사용을 승인합니다.',variable=approved).pack(pady=10)
+        approved=tk.BooleanVar(value=q['approved']);ttk.Checkbutton(right,text='정답·해설·원문 검토 완료 (미체크 상태도 풀이 가능)' ,variable=approved).pack(pady=10)
         def save():
-            q.update({k:v.get() for k,v in fields.items()});q.update(options=[v.get() for v in options],correct=answer.get(),explanation=ex.get('1.0','end').strip(),approved=approved.get(),type='객관식');self.store.put(q);self.refresh_bank();self.refresh_home();win.destroy()
+            q.update({k:v.get() for k,v in fields.items()});q.update(options=[v.get() for v in options],correct=answer.get(),explanation=ex.get('1.0','end').strip(),approved=approved.get(),type=kind.get(),answer=typed.get(),images=images);q.pop('showStem',None);q.pop('showAnswer',None);self.store.put(q);self.refresh_bank();self.refresh_home();win.destroy()
         ttk.Button(right,text='저장',command=lambda:self.safe(save)).pack(fill='x')
     def start_quiz(self):
-        qs=[q for q in self.store.questions() if q['approved']]
-        if not qs:raise ValueError('승인된 문제가 없습니다. 문제를 검토한 뒤 승인하세요.')
-        random.shuffle(qs);self.quiz=qs[:10];self.index=0;self.tabs.select(self.play);self.render_quiz()
+        qs=self.selected_questions()
+        if not qs:raise ValueError('풀이할 문제가 없습니다. JSON을 가져오거나 문제를 작성하세요.')
+        count=self.quiz_count.get()
+        if self.quiz_shuffle.get():random.shuffle(qs)
+        self.quiz=qs if count=='전체' else qs[:int(count)];self.index=0;self.responses={};self.navigate('play');self.render_quiz()
+    def stop_countdown(self):
+        if self.timer_job is not None:
+            self.after_cancel(self.timer_job);self.timer_job=None
+        self.countdown.stop()
+    def start_countdown(self):
+        self.stop_countdown();self.countdown.start();self.tick_countdown()
+    def tick_countdown(self):
+        self.timer_job=None
+        if self.countdown.deadline is None or not getattr(self,'timer_label',None) or not self.timer_label.winfo_exists():return
+        remaining=self.countdown.remaining
+        self.timer_label.configure(text=f'{remaining:02d}초' if remaining else '시간 종료',foreground='#b35b4c' if remaining<=3 else '#0c8476')
+        if remaining:self.timer_job=self.after(100,self.tick_countdown)
+    def quiz_key(self,event,delta):
+        if self.current_view!='play' or not hasattr(self,'quiz'):return
+        if isinstance(event.widget,(tk.Entry,tk.Text,ttk.Entry,ttk.Combobox,ttk.Spinbox)):return
+        if delta:self.move_quiz(delta)
+        else:self.show_answer()
+        return 'break'
+    def move_quiz(self,delta):
+        self.responses[self.quiz[self.index]['id']]=self.quiz_choice.get()
+        if 0<=self.index+delta<len(self.quiz):self.index+=delta;self.render_quiz()
+        elif delta>0:self.stop_countdown();messagebox.showinfo('퀴즈 완료','마지막 문제입니다. 이전 문제로 돌아가 다시 확인할 수 있습니다.')
+    def open_quiz_image(self,name):
+        path=self.assets.resolve(name)
+        if path and sys.platform=='win32':os.startfile(str(path))
+    def show_answer(self):
+        self.stop_countdown();q=self.quiz[self.index];value=self.quiz_choice.get();self.responses[q['id']]=value
+        if q.get('type','객관식')=='단답형':matched=value.strip().casefold()==q['answer'].strip().casefold() if isinstance(value,str) else False
+        else:matched=str(value)==str(q['correct'])
+        self.quiz_result.configure(text=('정답입니다.' if matched else '정답을 확인하세요.')+'\n정답: '+answer_text(q)+'\n\n'+q['explanation']+f"\n\n출처: {q.get('source','미지정')} · PDF {q.get('page','미상')}쪽")
     def render_quiz(self):
+        self.stop_countdown()
         for w in self.quizframe.winfo_children():w.destroy()
-        q=self.quiz[self.index];ttk.Label(self.quizframe,text=f'문제 {self.index+1} / {len(self.quiz)} · {q.get("topic","")}',font=('맑은 고딕',14)).pack(anchor='w',pady=10)
-        ttk.Label(self.quizframe,text=q['stem'],font=('맑은 고딕',21,'bold'),wraplength=1000).pack(anchor='w',pady=15)
-        choice=tk.IntVar(value=-1)
-        for i,o in enumerate(q['options']):ttk.Radiobutton(self.quizframe,text=f'{i+1}. {o}',variable=choice,value=i).pack(anchor='w',pady=10)
-        result=ttk.Label(self.quizframe,text='',wraplength=1000);result.pack(fill='x',pady=20)
-        ttk.Button(self.quizframe,text='정답·해설 보기',command=lambda:result.configure(text=f"정답: {q['correct']+1}번\n\n{q['explanation']}" )).pack(anchor='w')
-        def nxt():
-            if self.index+1==len(self.quiz):messagebox.showinfo('퀴즈 완료','모든 문제를 확인했습니다.');return
-            self.index+=1;self.render_quiz()
-        ttk.Button(self.quizframe,text='다음 문제',command=nxt).pack(anchor='e',pady=10)
+        q=self.quiz[self.index];top=ttk.Frame(self.quizframe,style='Card.TFrame');top.pack(fill='x')
+        self.timer_label=ttk.Label(top,text='10초',font=('맑은 고딕',26,'bold'),style='Card.TLabel');self.timer_label.pack(side='right')
+        ttk.Label(top,text=f'문제 {self.index+1} / {len(self.quiz)} · {q.get("type","객관식")} · {q.get("topic","")}',style='Card.TLabel',wraplength=520,font=('맑은 고딕',12)).pack(side='left')
+        controls=ttk.Frame(self.quizframe,style='Card.TFrame');controls.pack(side='bottom',fill='x',pady=(8,0))
+        self.action(controls,'← 이전',lambda:self.move_quiz(-1));self.action(controls,'정답·해설 (Space)',self.show_answer,True);self.action(controls,'10초 다시',self.start_countdown);self.action(controls,'다음 →',lambda:self.move_quiz(1),side='right')
+        canvas=tk.Canvas(self.quizframe,bg='white',highlightthickness=0);scroll=ttk.Scrollbar(self.quizframe,orient='vertical',command=canvas.yview);scroll.pack(side='right',fill='y');canvas.pack(fill='both',expand=True);canvas.configure(yscrollcommand=scroll.set)
+        content=ttk.Frame(canvas,style='Card.TFrame');item=canvas.create_window((0,0),window=content,anchor='nw')
+        canvas.bind('<Configure>',lambda e:canvas.itemconfigure(item,width=e.width));content.bind('<Configure>',lambda e:canvas.configure(scrollregion=canvas.bbox('all')))
+        width=max(480,self.quizframe.winfo_width()-65)
+        ttk.Label(content,text=q['stem'],font=('맑은 고딕',19,'bold'),style='Card.TLabel',wraplength=width).pack(anchor='w',pady=12)
+        self.quiz_images=[]
+        from PIL import Image,ImageTk
+        for name in q.get('images',[]):
+            path=self.assets.resolve(name)
+            if path:
+                with Image.open(path) as im:
+                    preview=im.convert('RGB');preview.thumbnail((min(width,850),360));photo=ImageTk.PhotoImage(preview)
+                self.quiz_images.append(photo);label=ttk.Label(content,image=photo,style='Card.TLabel',cursor='hand2');label.pack(anchor='w',pady=4);label.bind('<Button-1>',lambda e,n=name:self.open_quiz_image(n))
+                ttk.Label(content,text=name+' · 클릭하면 원본 크기로 열기',style='CardMuted.TLabel').pack(anchor='w')
+            else:ttk.Label(content,text='이미지 없음: '+name+' · 사용안내에서 교재 이미지 ZIP을 가져오세요.',foreground='#b35b4c',wraplength=width).pack(anchor='w')
+        value=self.responses.get(q['id'],'' if q.get('type')=='단답형' else '-1');self.quiz_choice=tk.StringVar(value=str(value))
+        if q.get('type')=='단답형':ttk.Entry(content,textvariable=self.quiz_choice,width=60).pack(anchor='w',pady=12)
+        else:
+            for i,o in enumerate(q['options']):
+                row=ttk.Frame(content,style='Card.TFrame');row.pack(fill='x',pady=4)
+                ttk.Radiobutton(row,variable=self.quiz_choice,value=str(i)).pack(side='left')
+                label=ttk.Label(row,text=f'{i+1}. {o}',style='Card.TLabel',wraplength=width-60);label.pack(side='left',fill='x',expand=True);label.bind('<Button-1>',lambda e,v=str(i):self.quiz_choice.set(v))
+        self.quiz_result=ttk.Label(content,text='',style='Card.TLabel',wraplength=width);self.quiz_result.pack(fill='x',pady=15)
+        self.start_countdown()
     def backup(self):
         if self.working:return self.show_busy()
         path=filedialog.asksaveasfilename(defaultextension='.zip',initialfile='EMSQuiz_전체백업.zip')
@@ -252,7 +324,9 @@ class App(WorkspaceUI, tk.Tk):
             db=Path(tmp)/'bank.sqlite3';self.store.backup(db)
             with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as z:
                 z.write(db,'bank.sqlite3')
-                for p in (ROOT/'originals').glob('*'):z.write(p,'originals/'+p.name)
+                for folder in ('originals','assets'):
+                    for p in (ROOT/folder).glob('*'):
+                        if p.is_file():z.write(p,folder+'/'+p.name)
         self.status.set('전체 백업 완료')
 
 def self_test(report):
@@ -283,7 +357,8 @@ def self_test(report):
         window=App();window.withdraw();window.update()
         doc,_=window.store.add_document('Example.pdf',b'example',[{'page':1,'text':'Example source for the UI test.'}])
         window.store.add_chapter(doc,'Example',1,1)
-        q={'id':uid(),'type':'객관식','topic':'Example','concept':'Example objective','stem':'Example question?','options':['A','B','C','D'],'correct':0,'explanation':'Example explanation.','approved':True}
+        name=window.assets.attach(root/'ocr.png')
+        q={'images':[name],'id':uid(),'type':'객관식','topic':'Example','concept':'Example objective','stem':'Example question?','options':['A','B','C','D'],'correct':0,'explanation':'Example explanation.','approved':True}
         window.store.put(q);window.refresh();window.deiconify();window.geometry('+10+10');window.update()
         screenshots=Path(report).parent/'qa'/Path(report).stem;screenshots.mkdir(parents=True,exist_ok=True)
         def capture(name):
@@ -297,8 +372,18 @@ def self_test(report):
         assert all(str(b.cget('state'))=='disabled' for b in window.task_controls)
         capture('ocr-progress');window.handle_event('cancelled','검사용 작업을 중단했습니다.')
         window.navigate('bank');window.update();capture('question-bank')
-        window.start_quiz();window.update();capture('quiz');window.editor(q);window.update();window.store.db.close();window.destroy()
-    Path(report).write_text(json.dumps({'ok':True,'python':sys.version,'frozen':bool(getattr(sys,'frozen',False)),'checks':['pdf_render','korean_english_ocr','scanned_pdf_to_text','database','gui','question_editor','quiz','sidebar_dashboard','visible_progress','busy_button_lock','completion_next_step']}),encoding='utf-8')
+        window.start_quiz();window.update();assert len(window.quiz_images)==1;assert window.countdown.remaining==10;capture('quiz-image-timer')
+        window.quiz_choice.set('0');window.show_answer();window.update();capture('quiz-answer');assert window.countdown.remaining is None
+        window.navigate('settings');window.update();capture('offline-guide')
+        from exchange import export_bundle,export_xlsx
+        import hashlib
+        digest=hashlib.sha256((root/'scan.pdf').read_bytes()).hexdigest()
+        entries=window.assets.extract(root/'scan.pdf',digest,threading.Event(),lambda msg:None)
+        assert any(e['kind']=='image' for e in entries)
+        export_bundle(root/'material.zip',{'name':'scan.pdf','digest':digest,'pages':extracted},window.assets,entries)
+        export_xlsx(root/'questions.xlsx',[q]);assert (root/'questions.xlsx').read_bytes().startswith(b'PK')
+        window.editor(q);window.update();capture('editor');window.stop_countdown();window.store.db.close();window.destroy()
+    Path(report).write_text(json.dumps({'ok':True,'python':sys.version,'frozen':bool(getattr(sys,'frozen',False)),'checks':['pdf_render','korean_english_ocr','scanned_pdf_to_text','database','gui','question_editor','quiz','sidebar_dashboard','visible_progress','busy_button_lock','completion_next_step','image_extraction','md_image_zip','json_image_quiz','xlsx_export','automatic_10_second_countdown']}),encoding='utf-8')
 
 if __name__=='__main__':
     if len(sys.argv)==3 and sys.argv[1]=='--self-test':

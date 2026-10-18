@@ -22,11 +22,27 @@ def validate(q):
     if not isinstance(q,dict): raise ValueError('문제는 객체여야 합니다.')
     for k in ('stem','concept','explanation'):
         if not isinstance(q.get(k),str) or not q[k].strip(): raise ValueError(k+' 항목이 필요합니다.')
-    opts=q.get('options')
-    if not isinstance(opts,list) or len(opts)!=4 or any(not isinstance(o,str) or not o.strip() for o in opts) or len(set(o.strip() for o in opts))!=4:
-        raise ValueError('서로 다른 선택지 4개가 필요합니다.')
-    if type(q.get('correct')) is not int or not 0<=q['correct']<4: raise ValueError('correct는 0~3 정수여야 합니다.')
-    if q.get('type','객관식')!='객관식': raise ValueError('Windows 초판은 객관식 문제만 지원합니다.')
+    kind=q.get('type','객관식');q['type']=kind
+    if kind not in ('객관식','OX','단답형'):raise ValueError('type은 객관식, OX, 단답형 중 하나입니다.')
+    if kind!='객관식':
+        q['stem']=q.get('showStem') or q['stem']
+        answer=q.get('answer',q.get('showAnswer'))
+        if kind=='OX':
+            if answer is None and q.get('options')==['O','X'] and type(q.get('correct')) is int and q['correct'] in (0,1):answer=['O','X'][q['correct']]
+            if not isinstance(answer,str) or answer.strip().upper() not in ('O','X'):raise ValueError('OX answer는 O 또는 X입니다.')
+            q.update(options=['O','X'],correct=0 if answer.strip().upper()=='O' else 1,answer=answer.strip().upper())
+        else:
+            if not isinstance(answer,str) or not answer.strip():raise ValueError('단답형 answer가 필요합니다.')
+            q.update(options=[],correct=0,answer=answer.strip())
+    else:
+        opts=q.get('options')
+        if not isinstance(opts,list) or len(opts)!=4 or any(not isinstance(o,str) or not o.strip() for o in opts) or len(set(o.strip() for o in opts))!=4:
+            raise ValueError('서로 다른 선택지 4개가 필요합니다.')
+        if type(q.get('correct')) is not int or not 0<=q['correct']<4:raise ValueError('correct는 0~3 정수여야 합니다.')
+    images=q.get('images',[])
+    if not isinstance(images,list) or len(images)>20 or any(not isinstance(v,str) or not re.fullmatch(r'[A-Za-z0-9_-]+\.(?:png|jpg|jpeg)',v) for v in images):
+        raise ValueError('images는 경로 없이 이미지 파일명만 담은 배열이어야 합니다 (png/jpg/jpeg, 최대 20개).')
+    q['images']=images
     if not isinstance(q.get('refs',[]),list): raise ValueError('refs는 배열이어야 합니다.')
     return q
 

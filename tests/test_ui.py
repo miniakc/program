@@ -23,20 +23,49 @@ class WindowsUIFlowTests(unittest.TestCase):
                 pages=[{'page':1,'text':'첫 페이지 본문'},{'page':2,'text':'두 번째 페이지 본문'}]
                 window.handle_event('doc',('테스트.md',b'markdown source',pages,'unused'));window.update()
                 self.assertFalse(window.working);self.assertEqual(window.task.percent,100);self.assertEqual(window.current_view,'docs')
-                self.assertEqual(window.doclist.get(),'테스트.md');self.assertIn('첫 페이지',window.body.get('1.0','end'));self.assertIn('다시 올릴 필요',window.job_detail.cget('text'))
-                self.assertEqual(str(window.generate_button.cget('state')),'disabled')
+                self.assertEqual(window.doclist.get(),'테스트.md');self.assertIn('첫 페이지',window.body.get('1.0','end'));self.assertIn('GPT',window.job_detail.cget('text'))
+                self.assertEqual(str(window.generate_button.cget('state')),'normal')
                 window.ct.set('첫 챕터');window.cs.set('1');window.ce.set('2');window.add_chapter();window.update()
                 self.assertEqual(str(window.generate_button.cget('state')),'normal')
                 window.pagepick.current(1);window.show_page();self.assertIn('두 번째',window.body.get('1.0','end'))
                 # Completing a new registration selects that document rather than retaining the old list index.
                 window.begin_task('교재 등록','새 교재.md');window.handle_event('doc',('새 교재.md',b'new md',pages,'unused'));window.update()
                 self.assertEqual(window.doclist.get(),'새 교재.md');self.assertEqual(window.chapters.get_children(),())
-                self.assertEqual(str(window.generate_button.cget('state')),'disabled')
+                self.assertEqual(str(window.generate_button.cget('state')),'normal')
                 # Main next-action bar must remain mapped even in a smaller desktop window.
                 self.assertTrue(window.nextstep.winfo_ismapped());self.assertLess(window.nextstep.winfo_rooty(),window.job_box.winfo_rooty())
                 window.navigate('bank');window.update();self.assertTrue(window.bank_quiz_button.winfo_ismapped());self.assertLess(window.bank_quiz_button.winfo_rooty(),window.job_box.winfo_rooty())
                 doc=next(d for d in window.docrows if d['name']=='테스트.md');window.open_document(doc['id'])
-                window.apikey.set('abcde가');window.generate_dialog();window.update()
-                self.assertEqual(window.current_view,'settings');self.assertFalse(window.working);self.assertIn('한글',window.key_feedback.get())
-                window.apikey.set('sk-example');self.assertIn('실제 키의 유효성',window.key_feedback.get())
-            finally:window.store.db.close();window.destroy()
+                # Imported JSON is immediately playable without approval or source-link dialogs.
+                import json
+                from PIL import Image
+                image=Path(temp)/'figure.png';Image.new('RGB',(320,180),'teal').save(image);name=window.assets.attach(image)
+                bank=Path(temp)/'questions.json';bank.write_text(json.dumps({'questions':[
+                    {'type':'객관식','stem':'이미지 객관식','concept':'학습목표','options':['A','B','C','D'],'correct':0,'explanation':'설명','images':[name]},
+                    {'type':'OX','stem':'OX 문제','concept':'목표','answer':'O','explanation':'OX 해설'},
+                    {'type':'단답형','stem':'단답 문제','concept':'목표','answer':'정답','explanation':'단답 해설'}]},ensure_ascii=False),encoding='utf-8')
+                with patch.object(app.filedialog,'askopenfilename',return_value=str(bank)),patch.object(app.messagebox,'askyesno',side_effect=AssertionError('unexpected approval')):
+                    window.import_bank()
+                self.assertEqual(len(window.qlist.selection()),3);self.assertFalse(any(q['approved'] for q in window.qrows))
+                window.start_quiz();window.update();self.assertEqual(len(window.quiz),3)
+                # Find each type independent of database tie ordering.
+                for kind in ('객관식','OX','단답형'):
+                    window.index=next(i for i,q in enumerate(window.quiz) if q['type']==kind);window.render_quiz();window.update()
+                    self.assertIn('10초',window.timer_label.cget('text'))
+                    if kind=='객관식':self.assertEqual(len(window.quiz_images),1)
+                    window.quiz_choice.set('정답' if kind=='단답형' else '0');window.show_answer();self.assertIn('정답입니다',window.quiz_result.cget('text'));self.assertIsNone(window.countdown.remaining)
+                window.start_countdown();window.countdown.deadline=window.countdown.clock()-1
+                if window.timer_job:window.after_cancel(window.timer_job)
+                window.tick_countdown();self.assertEqual(window.timer_label.cget('text'),'시간 종료')
+                window.render_quiz();self.assertEqual(window.quiz_result.cget('text'),'')
+                window.navigate('bank');self.assertIsNone(window.countdown.remaining)
+                xlsx=Path(temp)/'out.xlsx'
+                with patch.object(app.filedialog,'asksaveasfilename',return_value=str(xlsx)):window.export_excel()
+                self.assertTrue(xlsx.read_bytes().startswith(b'PK'))
+                material=Path(temp)/'out.zip'
+                with patch.object(app.filedialog,'asksaveasfilename',return_value=str(material)):window.export_material()
+                import time
+                until=time.monotonic()+5
+                while window.working and time.monotonic()<until:window.update();time.sleep(.01)
+                self.assertFalse(window.working);self.assertTrue(material.is_file())
+            finally:window.stop_countdown();window.store.db.close();window.destroy()
