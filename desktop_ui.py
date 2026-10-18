@@ -115,7 +115,7 @@ class WorkspaceUI:
         job=self.task;active=self.working
         if self.current_view=='play' and not active:self.job_box.pack_forget()
         elif not self.job_box.winfo_manager():self.job_box.pack(side='bottom',fill='x',padx=24,pady=(4,15),before=self.tabs)
-        compact=not active and job.state in ('idle','completed')
+        compact=not active and job.state in ('idle','done')
         if compact!=self._compact_job:
             self._compact_job=compact
             if compact:
