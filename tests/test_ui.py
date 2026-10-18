@@ -68,6 +68,18 @@ class WindowsUIFlowTests(unittest.TestCase):
                 until=time.monotonic()+5
                 while window.working and time.monotonic()<until:window.update();time.sleep(.01)
                 self.assertFalse(window.working);self.assertTrue(material.is_file())
+                # Exercise the actual crop editor and worker on a scan page.
+                from test_figures import fixture
+                from types import SimpleNamespace
+                pdf=Path(temp)/'figures.pdf';fixture(pdf)
+                doc,_=window.store.add_document('figures.pdf',pdf.read_bytes(),[{'page':1,'text':'Figure source'},{'page':2,'text':'Scan'}],str(pdf));window.refresh(select_doc=doc)
+                window.edit_figure_regions();window.update();editor=window.figure_editor
+                editor.page_no.set(2);editor.show_page();self.assertEqual(editor.boxes,[])
+                x0,y0,x1,y1=editor.to_canvas((40,100,240,300))
+                editor.press(SimpleNamespace(x=x0,y=y0));editor.motion(SimpleNamespace(x=x1,y=y1));editor.release(SimpleNamespace(x=x1,y=y1));self.assertEqual(len(editor.boxes),1)
+                editor.save();until=time.monotonic()+5
+                while window.working and time.monotonic()<until:window.update();time.sleep(.01)
+                self.assertFalse(window.working);self.assertEqual(len(window.assets.entries(window.store.document(doc)['digest'])),3)
                 # Delete all registered documents through the UI, preserving questions and used images.
                 ids=[d['id'] for d in window.docrows]
                 with patch.object(window,'confirm_delete',return_value=True):

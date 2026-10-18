@@ -19,6 +19,7 @@ class FigureRegionEditor(tk.Toplevel):
         self.canvas=tk.Canvas(self,bg='#e6ece9',highlightthickness=0);self.canvas.pack(fill='both',expand=True,padx=14,pady=(0,12));self.canvas.bind('<ButtonPress-1>',self.press);self.canvas.bind('<B1-Motion>',self.motion);self.canvas.bind('<ButtonRelease-1>',self.release)
         self.protocol('WM_DELETE_WINDOW',self.close);self.after_idle(self.show_page)
     def show_page(self):
+        self.update_idletasks()
         page=self.document[self.page_no.get()-1]
         try:
             self.w,self.h=page.get_size();self.scale=min(max(self.canvas.winfo_width()-20,500)/self.w,max(self.canvas.winfo_height()-20,300)/self.h)

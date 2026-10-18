@@ -15,7 +15,7 @@ class App(WorkspaceUI, tk.Tk):
         super().__init__();self.title('EMS QUIZ · Windows 0.5.0')
         width=max(980,min(1320,self.winfo_screenwidth()-40));height=max(680,min(890,self.winfo_screenheight()-70));self.geometry(f'{width}x{height}');self.minsize(980,680)
         self.store=Store(ROOT/'bank.sqlite3');self.events=queue.Queue();self.working=False;self.cancel=threading.Event();self.task=TaskState()
-        self.assets=AssetStore(ROOT/'assets');self.countdown=QuizCountdown();self.timer_job=None
+        self.cleanup_pending();self.assets=AssetStore(ROOT/'assets');self.countdown=QuizCountdown();self.timer_job=None
         self.configure_style();self.setup_shell();self.setup_home();self.setup_docs();self.setup_bank();self.setup_settings();self.refresh();self.navigate('home');self.draw_task();self.after(100,self.poll)
         self.protocol('WM_DELETE_WINDOW',self.close)
         self.bind('<F11>',lambda e:self.toggle_fullscreen());self.bind('<Escape>',lambda e:self.attributes('-fullscreen',False))
@@ -82,6 +82,20 @@ class App(WorkspaceUI, tk.Tk):
         if not path.is_file():raise ValueError('원본 파일을 찾을 수 없습니다.')
         if sys.platform=='win32':os.startfile(str(path))
         else:raise ValueError('원본 열기는 Windows 설치 버전에서 사용할 수 있습니다.')
+    def cleanup_pending(self):
+        registry=ROOT/'pending_delete.json'
+        try:paths=json.loads(registry.read_text()) if registry.exists() else []
+        except (OSError,ValueError):return
+        used={d['original'] for d in self.store.documents()};remaining=[]
+        for value in paths if isinstance(paths,list) else []:
+            if not isinstance(value,str):continue
+            p=Path(value)
+            if p.parent.resolve()!=(ROOT/'originals').resolve() or value in used:continue
+            try:
+                if p.is_file():p.unlink()
+            except OSError:remaining.append(value)
+        if remaining:registry.write_text(json.dumps(remaining),encoding='utf-8')
+        elif registry.exists():registry.unlink()
     def confirm_delete(self,title,text):
         result=[False];win=tk.Toplevel(self);win.title(title);win.geometry('510x270');win.transient(self);win.grab_set();win.configure(bg='#f6f8f8');win.resizable(False,False)
         body=ttk.Frame(win,padding=24);body.pack(fill='both',expand=True)
@@ -96,17 +110,26 @@ class App(WorkspaceUI, tk.Tk):
         if not self.confirm_delete('교재 삭제',d['name']+'\n\n등록된 교재·챕터·원본 사본을 삭제합니다. 이미 만든 문제는 유지하며, 문제에서 사용하는 그림도 보존합니다.'):return
         self.store.delete_document(doc_id)
         original=Path(d['original'])
-        if original.is_file() and original.parent.resolve()==(ROOT/'originals').resolve():original.unlink()
+        deferred=False
+        if original.is_file() and original.parent.resolve()==(ROOT/'originals').resolve():
+            try:original.unlink()
+            except OSError:
+                registry=ROOT/'pending_delete.json'
+                try:pending=json.loads(registry.read_text()) if registry.exists() else []
+                except (OSError,ValueError):pending=[]
+                registry.write_text(json.dumps(list(dict.fromkeys(pending+[str(original)]))),encoding='utf-8');deferred=True
         used={name for q in self.store.questions() for name in q.get('images',[])}
         for path in self.assets.root.glob(d['digest'][:16]+'_*.png'):
-            if path.name not in used:path.unlink()
+            if path.name not in used:
+                try:path.unlink()
+                except OSError:pass
         for suffix in ('.json','.figures-v2.json','.regions.json'):
             path=self.assets.root/(d['digest']+suffix)
             if path.exists():path.unlink()
         for suffix in ('-auto','-ocr'):
             path=ROOT/'jobs'/'extract'/(d['digest']+suffix)
-            if path.is_dir():shutil.rmtree(path)
-        self.refresh();self.status.set('교재를 삭제했습니다. 저장된 문제와 문제에서 사용하는 그림은 유지됩니다.');self.draw_task()
+            if path.is_dir():shutil.rmtree(path,ignore_errors=True)
+        self.refresh();self.status.set('교재를 삭제했습니다. 저장된 문제와 문제에서 사용하는 그림은 유지됩니다.'+(' 열려 있는 원본 사본은 PDF 창을 닫은 뒤 다음 실행 시 자동 정리합니다.' if deferred else ''));self.draw_task()
     def edit_figure_regions(self):
         if self.working:return self.show_busy()
         d=self.store.document(self.selected_doc());original=Path(d['original'])
@@ -450,7 +473,7 @@ def self_test(report):
         window.navigate('bank');window.update();capture('question-bank')
         window.start_quiz();window.update();assert len(window.quiz_images)==1;assert window.countdown.remaining==10;capture('quiz-image-timer')
         window.quiz_choice.set('0');window.show_answer();window.update();capture('quiz-answer');assert window.countdown.remaining is None
-        window.navigate('docs');window.edit_figure_regions();window.update();capture('figure-region-editor');window.figure_editor.close()
+        window.navigate('docs');window.edit_figure_regions();window.update();capture('figure-region-editor');assert window.figure_editor.photo.width()>500;window.figure_editor.close()
         window.navigate('settings');window.update();capture('offline-guide')
         from exchange import export_bundle,export_xlsx
         import hashlib
