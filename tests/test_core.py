@@ -41,6 +41,12 @@ class CoreTests(unittest.TestCase):
         try:self.assertEqual(len(other.questions()),1)
         finally:other.db.close()
     def test_deduplicate_document(self):self.assertFalse(self.s.add_document('same.pdf',b'pdf',[])[1])
+    def test_delete_document_keeps_questions_and_detaches_evidence(self):
+        self.s.add_chapter(self.doc,'챕터',1,1);chapter=self.s.chapters(self.doc)[0]
+        self.s.put(question(id='keep',doc_id=self.doc,chapter_id=chapter['id'],images=['keep.png'],source='test.pdf',approved=True))
+        self.s.delete_document(self.doc)
+        self.assertEqual(self.s.documents(),[]);self.assertEqual(self.s.chapters(self.doc),[])
+        saved=self.s.questions()[0];self.assertEqual(saved['images'],['keep.png']);self.assertNotIn('doc_id',saved);self.assertNotIn('chapter_id',saved);self.assertEqual(saved['source'],'test.pdf')
     def test_delete(self):
         self.s.import_questions([question()]);self.s.delete([self.s.questions()[0]['id']]);self.assertEqual(self.s.questions(),[])
 

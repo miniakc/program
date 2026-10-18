@@ -81,6 +81,18 @@ class Store:
         id=uid()
         with self.db: self.db.execute('INSERT INTO docs VALUES(?,?,?,?,?,?)',(id,name,digest,json.dumps(pages,ensure_ascii=False),original,now()))
         return id,True
+    def delete_document(self,id):
+        d=self.document(id)
+        # Keep questions, their source citations and image files usable.
+        with self.db:
+            for row in self.db.execute('SELECT id,payload FROM questions').fetchall():
+                q=json.loads(row['payload'])
+                if q.get('doc_id')==id:
+                    q.pop('doc_id',None);q.pop('chapter_id',None)
+                    self.db.execute('UPDATE questions SET payload=? WHERE id=?',(json.dumps(q,ensure_ascii=False),row['id']))
+            self.db.execute('DELETE FROM chapters WHERE doc_id=?',(id,))
+            self.db.execute('DELETE FROM docs WHERE id=?',(id,))
+        return d
     def update_pages(self,doc,pages):
         with self.db:
             self.db.execute('UPDATE docs SET pages=? WHERE id=?',(json.dumps(pages,ensure_ascii=False),doc))

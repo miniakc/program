@@ -25,11 +25,14 @@ class ExchangeTests(unittest.TestCase):
         import hashlib
         digest=hashlib.sha256(pdf.read_bytes()).hexdigest();events=[]
         entries=self.assets.extract(pdf,digest,threading.Event(),events.append)
-        self.assertTrue(any(e['kind']=='page' for e in entries));self.assertTrue(any(e['kind']=='image' for e in entries))
+        self.assertEqual(entries,[]);self.assertEqual(self.assets.review_pages(digest),[1])
+        self.assets.set_regions(digest,1,[(50,50,350,250)])
+        entries=self.assets.extract(pdf,digest,threading.Event(),events.append)
+        self.assertTrue(entries);self.assertTrue(all(e['kind']=='figure' for e in entries));self.assertFalse(any('_page.' in e['id'] for e in entries))
         self.assertEqual(events[-1]['current'],1)
         doc={'name':'테스트.pdf','digest':digest,'pages':[{'page':1,'text':'원문 본문'}]};bundle=self.root/'material.zip';export_bundle(bundle,doc,self.assets,entries)
         with zipfile.ZipFile(bundle) as z:
-            md=z.read('교재.md').decode();self.assertIn('개별 이미지',md);self.assertEqual(parse_md(md)[0]['page'],1);self.assertIn(entries[0]['id'],md)
+            md=z.read('교재.md').decode();self.assertIn('그림 (라벨 포함)',md);self.assertEqual(parse_md(md)[0]['page'],1);self.assertIn(entries[0]['id'],md)
         qq=parse_questions(json.dumps([q(type='OX',answer='O',images=[entries[0]['id']])]))[0]
         self.assertIsNotNone(self.assets.resolve(qq['images'][0]))
         other=AssetStore(self.root/'other');self.assertIsNone(other.resolve(qq['images'][0]));self.assertEqual(other.import_zip(bundle),len(entries));self.assertIsNotNone(other.resolve(qq['images'][0]))

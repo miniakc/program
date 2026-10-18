@@ -9,7 +9,7 @@ PROMPT='''첨부한 MD와 실제로 첨부한 그림만 근거로 문제를 출�
 객관식(4지선다), OX, 단답형을 지원합니다. 학습목표·적용·판단을 평가하고 정답과 오답의 이유를 해설하세요.
 그림이 꼭 필요한 문제는 첨부된 그림을 직접 확인해 출제하고 images에 MD의 이미지 ID(파일명)를 그대로 넣으세요.
 첨부되지 않았거나 식별이 어려운 그림은 추측하지 마세요. 텍스트 문제는 images: []로 둡니다.
-페이지 전체 미리보기와 개별 이미지는 구분되어 있습니다. 이미지 주변 정답·캡션 노출 여부도 확인하세요.
+그림은 겹친 설명·라벨을 포함한 하나의 이미지입니다. 그림 안에 정답이 노출되는지도 확인하세요.
 결과를 UTF-8 .json 파일로 다운로드할 수 있게 제공하세요. 출력은 아래 형식의 questions 배열입니다.
 공통: type, topic, concept, stem, explanation, source, page(원본 PDF 페이지), quote(연속된 원문 인용), images.
 객관식: options 4개, correct 0~3 (첫 선택지가 0). OX: answer "O" 또는 "X". 단답형: answer 정답 문자열.
@@ -35,47 +35,46 @@ class AssetStore:
         raw=Path(path).read_bytes();name=hashlib.sha256(raw).hexdigest()[:24]+'.png'
         with Image.open(io.BytesIO(raw)) as im:im.convert('RGB').save(self.root/name)
         return name
+    def manifest_path(self,digest):return self.root/(digest+'.figures-v2.json')
+    def entries(self,digest):
+        p=self.manifest_path(digest)
+        return json.loads(p.read_text(encoding='utf-8'))['images'] if p.exists() else []
+    def review_pages(self,digest):
+        p=self.manifest_path(digest)
+        return [r['page'] for r in json.loads(p.read_text(encoding='utf-8')).get('pages',[]) if r['review']] if p.exists() else []
+    def set_regions(self,digest,page,boxes):
+        p=self.root/(digest+'.regions.json');data=json.loads(p.read_text()) if p.exists() else {}
+        data[str(page)]=[list(b) for b in boxes];p.write_text(json.dumps(data),encoding='utf-8')
+        manifest=self.manifest_path(digest)
+        if manifest.exists():manifest.unlink()
     def extract(self,pdf,digest,cancel,progress):
         import pypdfium2 as pdfium
-        manifest=self.root/(digest+'.json')
+        from figure_engine import detect_regions,render_region
+        manifest=self.manifest_path(digest)
         if manifest.exists():
-            entries=json.loads(manifest.read_text(encoding='utf-8'))
-            if all(self.resolve(e['id']) for e in entries):return entries
-        entries=[]
-        document=pdfium.PdfDocument(str(pdf))
+            data=json.loads(manifest.read_text(encoding='utf-8'))
+            if all(self.resolve(e['id']) for e in data['images']):return data['images']
+        overrides=self.root/(digest+'.regions.json');regions=json.loads(overrides.read_text()) if overrides.exists() else {}
+        entries=[];states=[];document=pdfium.PdfDocument(str(pdf))
         try:
             total=len(document)
             for i in range(total):
-                check_cancel(cancel);progress({'phase':'그림·페이지 이미지 저장','current':i,'total':total,'unit':'쪽','detail':f'PDF {i+1}쪽 · 개별 그림과 전체 페이지를 구분하여 저장합니다.'})
+                check_cancel(cancel);progress({'phase':'그림 영역 추출 · 겹친 라벨 포함','current':i,'total':total,'unit':'쪽','detail':f'PDF {i+1}쪽 · 본문을 제외한 그림 영역을 합성합니다.'})
                 page=document[i]
                 try:
-                    prefix=f'{digest[:16]}_p{i+1:04d}'
-                    # Full pages preserve diagrams drawn as vectors and scanned pages.
-                    w,h=page.get_size();bitmap=page.render(scale=min(2,(8_000_000/max(w*h,1))**.5))
-                    try:
-                        name=prefix+'_page.png';bitmap.to_pil().convert('RGB').save(self.root/name)
-                    finally:bitmap.close()
-                    entries.append({'id':name,'page':i+1,'kind':'page','label':'전체 페이지'})
-                    for n,obj in enumerate(page.get_objects(filter=[pdfium.raw.FPDF_PAGEOBJ_IMAGE]),1):
-                        check_cancel(cancel)
-                        try:
-                            bitmap=obj.get_bitmap(render=True)
-                            try:
-                                im=bitmap.to_pil().convert('RGB')
-                                if min(im.size)<30:continue
-                                name=f'{prefix}_image{n:03d}.png';im.save(self.root/name)
-                            finally:bitmap.close()
-                            entries.append({'id':name,'page':i+1,'kind':'image','label':'개별 이미지'})
-                        except Exception:
-                            # The page preview above always retains visible image content.
-                            continue
+                    manual=str(i+1) in regions
+                    if manual:boxes=regions[str(i+1)];scan=False
+                    else:boxes,scan=detect_regions(page)
+                    states.append({'page':i+1,'review':scan and not manual,'figures':len(boxes),'manual':manual})
+                    for n,box in enumerate(boxes,1):
+                        check_cancel(cancel);name=f'{digest[:16]}_p{i+1:04d}_figure{n:03d}.png'
+                        im=render_region(page,box);im.save(self.root/name)
+                        entries.append({'id':name,'page':i+1,'kind':'figure','label':'그림 (라벨 포함)','box':list(box),'manual':manual})
                 finally:page.close()
-                progress({'phase':'그림 저장 완료','current':i+1,'total':total,'unit':'쪽','detail':f'PDF {i+1}쪽 완료 · 개별 이미지 추출이 어려운 도형은 전체 페이지에 포함됩니다.'})
+                progress({'phase':'그림 영역 저장 완료','current':i+1,'total':total,'unit':'쪽','detail':f'PDF {i+1}쪽 완료 · 그림 {len(boxes)}개'+(' · 스캔 페이지는 그림 영역 선택 필요' if scan else '')})
         finally:document.close()
-        temp=manifest.with_suffix('.tmp');temp.write_text(json.dumps(entries,ensure_ascii=False),encoding='utf-8');temp.replace(manifest)
+        data={'version':2,'images':entries,'pages':states};temp=manifest.with_suffix('.tmp');temp.write_text(json.dumps(data,ensure_ascii=False),encoding='utf-8');temp.replace(manifest)
         return entries
-    def entries(self,digest):
-        p=self.root/(digest+'.json');return json.loads(p.read_text(encoding='utf-8')) if p.exists() else []
     def import_zip(self,path):
         from PIL import Image
         staged=[]
@@ -105,7 +104,7 @@ def markdown(document,entries):
 
 def export_bundle(path,document,assets,entries):
     md=markdown(document,entries)
-    guide='''사용 순서\n1. ZIP을 압축 해제합니다.\n2. 교재.md, 출제요청.txt, 필요한 images 그림을 GPT에 함께 첨부합니다.\nMD 링크만으로 이미지가 전달되지는 않습니다. 페이지 전체와 개별 그림 중 필요한 파일을 선택하세요.\n3. 출제 범위·문항 수를 지정하고 JSON 다운로드를 요청합니다.\n4. 이 PC에서는 JSON만 가져오면 그림이 연결됩니다. 다른 PC에서는 이 ZIP의 이미지도 먼저 가져오세요.\n벡터 도형·추출하기 어려운 그림은 전체 페이지 이미지에 보존됩니다. 개별 그림은 정답·캡션 포함 여부를 확인하세요.\n'''
+    guide='''사용 순서\n1. ZIP을 압축 해제합니다.\n2. 교재.md, 출제요청.txt, 필요한 images 그림을 GPT에 함께 첨부합니다.\nMD 링크만으로 이미지가 전달되지는 않습니다. 그림에 겹친 설명·라벨도 함께 저장됩니다. 필요한 그림을 선택하세요.\n3. 출제 범위·문항 수를 지정하고 JSON 다운로드를 요청합니다.\n4. 이 PC에서는 JSON만 가져오면 그림이 연결됩니다. 다른 PC에서는 이 ZIP의 이미지도 먼저 가져오세요.\n페이지 전체 PNG는 저장하지 않습니다. 스캔·복잡한 도형은 프로그램의 그림 영역 선택에서 범위를 확인하세요. 그림의 정답·캡션 노출 여부를 확인하세요.\n'''
     with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as z:
         z.writestr('교재.md',md);z.writestr('출제요청.txt',PROMPT);z.writestr('사용안내.txt',guide)
         z.writestr('manifest.json',json.dumps({'source':document['name'],'digest':document['digest'],'images':entries},ensure_ascii=False,indent=2))

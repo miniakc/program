@@ -51,7 +51,7 @@ if (-not $Compiler) { throw '프로그램 폴더 빌드 완료. 설치 EXE 생�
 if ($LASTEXITCODE -ne 0) { throw '설치 파일 생성 실패' }
 # Verify the installed copy with a PATH that cannot locate the builder's Python.
 $InstalledDir = Join-Path $env:TEMP 'EMSQuiz-installed-test'
-$Install = Start-Process -FilePath (Join-Path $PSScriptRoot 'release\EMSQuiz-Setup-0.4.1.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART', ('/DIR="' + $InstalledDir + '"')) -Wait -PassThru
+$Install = Start-Process -FilePath (Join-Path $PSScriptRoot 'release\EMSQuiz-Setup-0.5.0.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART', ('/DIR="' + $InstalledDir + '"')) -Wait -PassThru
 if ($Install.ExitCode -ne 0) { throw '설치 시험 실패' }
 $OldPath = $env:PATH
 try {
@@ -65,4 +65,4 @@ try {
 $Uninstall = Start-Process -FilePath (Join-Path $InstalledDir 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
 if ($Uninstall.ExitCode -ne 0) { throw '제거 시험 실패' }
 
-Write-Host '설치 파일: release\EMSQuiz-Setup-0.4.1.exe'
+Write-Host '설치 파일: release\EMSQuiz-Setup-0.5.0.exe'

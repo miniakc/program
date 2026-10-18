@@ -68,4 +68,11 @@ class WindowsUIFlowTests(unittest.TestCase):
                 until=time.monotonic()+5
                 while window.working and time.monotonic()<until:window.update();time.sleep(.01)
                 self.assertFalse(window.working);self.assertTrue(material.is_file())
+                # Delete all registered documents through the UI, preserving questions and used images.
+                ids=[d['id'] for d in window.docrows]
+                with patch.object(window,'confirm_delete',return_value=True):
+                    for id in ids:window.delete_doc(id)
+                window.update();self.assertEqual(window.docrows,[]);self.assertEqual(window.doclist.get(),'');self.assertEqual(window.pagepick.get(),'')
+                self.assertEqual(len(window.store.questions()),3);self.assertIsNotNone(window.assets.resolve(name));self.assertEqual(str(window.generate_button.cget('state')),'disabled')
+                self.assertEqual(str(window.figures_button.cget('state')),'disabled')
             finally:window.stop_countdown();window.store.db.close();window.destroy()
