@@ -38,3 +38,31 @@ class PipelineTests(unittest.TestCase):
         finally:bitmap.close();page.close();doc.close()
 
 if __name__=='__main__':unittest.main()
+
+class ApiTransportTests(unittest.TestCase):
+    def test_temporary_limit_retries(self):
+        import io, urllib.error
+        from unittest.mock import patch
+        from pipeline import request_questions
+        cancel=threading.Event()
+        # Advance the retry wait without sleeping; preserve real cancellation semantics.
+        cancel.wait=lambda seconds:False
+        error=urllib.error.HTTPError('https://api.openai.com',429,'limit',{},io.BytesIO(b'{"error":{"code":"rate_limit_exceeded"}}'))
+        response=io.StringIO(json.dumps({'status':'completed','output':[{'content':[{'type':'output_text','text':'{"questions":[]}'}]}],'usage':{}}))
+        with patch('urllib.request.urlopen',side_effect=[error,response]) as call:
+            qs,_=request_questions('secret',{},cancel,lambda m:None)
+            self.assertEqual(qs,[]);self.assertEqual(call.call_count,2)
+    def test_quota_does_not_retry_and_redacts_key(self):
+        import io, urllib.error
+        from unittest.mock import patch
+        from pipeline import request_questions
+        error=urllib.error.HTTPError('https://api.openai.com',429,'quota',{},io.BytesIO(b'{"error":{"code":"insufficient_quota","message":"secret"}}'))
+        with patch('urllib.request.urlopen',side_effect=error) as call:
+            with self.assertRaises(RuntimeError) as exc:request_questions('secret',{},threading.Event(),lambda m:None)
+            self.assertEqual(call.call_count,1);self.assertNotIn('secret',str(exc.exception))
+    def test_incomplete_output_is_rejected(self):
+        import io
+        from unittest.mock import patch
+        from pipeline import request_questions
+        with patch('urllib.request.urlopen',return_value=io.StringIO('{"status":"incomplete"}')):
+            with self.assertRaises(RuntimeError):request_questions('key',{},threading.Event(),lambda m:None)
