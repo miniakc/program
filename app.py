@@ -12,7 +12,7 @@ ROOT=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'.local/share')))/'EMSQu
 
 class App(WorkspaceUI, tk.Tk):
     def __init__(self):
-        super().__init__();self.title('EMS QUIZ · Windows 0.4.0')
+        super().__init__();self.title('EMS QUIZ · Windows 0.4.1')
         width=max(980,min(1320,self.winfo_screenwidth()-40));height=max(680,min(890,self.winfo_screenheight()-70));self.geometry(f'{width}x{height}');self.minsize(980,680)
         self.store=Store(ROOT/'bank.sqlite3');self.events=queue.Queue();self.working=False;self.cancel=threading.Event();self.task=TaskState()
         self.assets=AssetStore(ROOT/'assets');self.countdown=QuizCountdown();self.timer_job=None

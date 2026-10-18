@@ -1,4 +1,4 @@
-# EMS QUIZ Windows 0.4.0
+# EMS QUIZ Windows 0.4.1
 
 Windows 10/11 x64용 독립 설치 프로그램입니다. 사용자의 PC에는 Python, Office, OCR 엔진을 별도로 설치할 필요가 없습니다.
 

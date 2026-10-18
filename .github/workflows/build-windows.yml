@@ -32,7 +32,7 @@ jobs:
         with:
           name: EMSQuiz-Windows-installer
           path: |
-            release/EMSQuiz-Setup-0.4.0.exe
+            release/EMSQuiz-Setup-0.4.1.exe
             dist/bundle-smoke.json
             dist/installed-smoke.json
           if-no-files-found: error
@@ -44,8 +44,8 @@ jobs:
       - name: Publish tested installer
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: windows-0.4.0
-          name: EMS QUIZ Windows 0.4.0
+          tag_name: windows-0.4.1
+          name: EMS QUIZ Windows 0.4.1
           prerelease: true
           body: |
             Offline PDF/OCR to Markdown and images, with a GPT question prompt in the material ZIP.
@@ -54,6 +54,6 @@ jobs:
             Python and Korean/English OCR are bundled. No API key is required by this application.
             Tested with data/image/Excel/timer tests, real Windows UI, bundled OCR, and install/run/uninstall with Python removed from PATH.
           files: |
-            release/EMSQuiz-Setup-0.4.0.exe
+            release/EMSQuiz-Setup-0.4.1.exe
             dist/bundle-smoke.json
             dist/installed-smoke.json
