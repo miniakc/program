@@ -109,12 +109,20 @@ class WorkspaceUI:
         self.job_numbers=tk.Label(line,text='',bg=WHITE,fg=MUTED,font=('맑은 고딕',9));self.job_numbers.pack(side='right',padx=12)
         self.job_bar=ttk.Progressbar(self.job_box,style='Job.Horizontal.TProgressbar',maximum=100);self.job_bar.pack(fill='x',pady=(8,5))
         self.job_detail=tk.Label(self.job_box,text='',bg=WHITE,fg=MUTED,font=('맑은 고딕',9),anchor='w');self.job_detail.pack(fill='x')
-        self.job_tail=tk.Label(self.job_box,text='',bg=WHITE,fg=MUTED,font=('맑은 고딕',9),anchor='w');self.job_tail.pack(fill='x',pady=(3,0));self._indeterminate=False
+        self.job_tail=tk.Label(self.job_box,text='',bg=WHITE,fg=MUTED,font=('맑은 고딕',9),anchor='w');self.job_tail.pack(fill='x',pady=(3,0));self._indeterminate=False;self._compact_job=None
         self.status=tk.StringVar(value='')
     def draw_task(self):
         job=self.task;active=self.working
         if self.current_view=='play' and not active:self.job_box.pack_forget()
         elif not self.job_box.winfo_manager():self.job_box.pack(side='bottom',fill='x',padx=24,pady=(4,15),before=self.tabs)
+        compact=not active and job.state in ('idle','completed')
+        if compact!=self._compact_job:
+            self._compact_job=compact
+            if compact:
+                for w in (self.stopbutton,self.job_bar,self.job_detail):w.pack_forget()
+            else:
+                self.stopbutton.pack(side='right');self.job_bar.pack(fill='x',pady=(8,5));self.job_detail.pack(fill='x')
+                self.job_tail.pack_forget();self.job_tail.pack(fill='x',pady=(3,0))
         color='#b16740' if job.state in ('error','cancelled','stopping') else TEAL
         self.job_title.configure(text=f'{job.name}  ·  {job.phase}' if job.state!='idle' else '준비됨',fg=color)
         elapsed=f'{job.elapsed//60:02d}:{job.elapsed%60:02d}'
@@ -126,6 +134,8 @@ class WorkspaceUI:
             if self._indeterminate:self.job_bar.stop();self._indeterminate=False
             self.job_bar.configure(mode='determinate',value=job.percent or 0)
         self.job_detail.configure(text=(job.filename+'  |  ' if job.filename else '')+(job.detail or '교재를 등록하면 본문을 준비하고 다음 단계를 안내합니다.'))
+        if compact and not self.status.get():self.job_tail.pack_forget()
+        elif not self.job_tail.winfo_manager():self.job_tail.pack(fill='x',pady=(3,0))
         self.job_tail.configure(text=(self.status.get() or '현재 작업을 진행 중입니다. 다른 작업 버튼은 완료 후 사용할 수 있습니다.') if active else self.status.get())
         width=max(600,self.main.winfo_width()-90);self.job_detail.configure(wraplength=width,justify='left');self.job_tail.configure(wraplength=width,justify='left')
         self.stopbutton.configure(state='normal' if active and job.state=='running' else 'disabled',text='중단 대기 중' if job.state=='stopping' else '작업 중단')

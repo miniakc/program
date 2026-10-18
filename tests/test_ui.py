@@ -9,9 +9,9 @@ class WindowsUIFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, patch.object(app,'ROOT',Path(temp)):
             window=app.App();window.update()
             try:
-                self.assertEqual(window.current_view,'home')
+                self.assertEqual(window.current_view,'home');self.assertFalse(window.job_bar.winfo_ismapped())
                 self.assertTrue(window.begin_task('교재 등록','테스트.pdf'));window.update()
-                self.assertTrue(window.working)
+                self.assertTrue(window.working);self.assertTrue(window.job_bar.winfo_ismapped())
                 self.assertTrue(all(str(b.cget('state'))=='disabled' for b in window.task_controls))
                 self.assertFalse(window.begin_task('겹치는 작업','다른파일.pdf'));self.assertEqual(window.task.name,'교재 등록')
                 window.handle_event('status',{'phase':'한국어·영어 글자 인식 (OCR)','current':10,'total':40,'unit':'쪽','detail':'PDF 11쪽 인식 중'})
