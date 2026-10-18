@@ -12,7 +12,7 @@ class PipelineTests(unittest.TestCase):
         result,usage=generate(*args,request_fn=self.fake);self.assertEqual(len(result),1)
         def forbidden(*a):raise AssertionError('cached chunk must not call API')
         self.assertEqual(generate(*args,request_fn=forbidden)[0],result)
-        self.assertNotIn('not-a-real-key',''.join(p.read_text() for p in Path(self.tmp.name).rglob('*.json')))
+        self.assertNotIn('not-a-real-key',''.join(p.read_text(encoding='utf-8') for p in Path(self.tmp.name).rglob('*.json')))
     def test_reject_fake_quote(self):
         def fake(*args):
             qs,u=self.fake(*args);qs[0]['quote']='원문에 없는 텍스트를 인용했다';return qs,u

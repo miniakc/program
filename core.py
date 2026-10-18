@@ -103,7 +103,9 @@ class Store:
     def backup(self,target):
         target=Path(target)
         if target.resolve()==self.path.resolve():raise ValueError('현재 데이터베이스와 다른 백업 위치를 선택하세요.')
-        with sqlite3.connect(target) as dest:self.db.backup(dest)
+        dest=sqlite3.connect(target)
+        try:self.db.backup(dest)
+        finally:dest.close()
     def prompt(self,doc,chapter):
         d=self.document(doc)
         text='\n\n'.join(f"[PDF {p['page']}쪽]\n{p['text']}" for p in d['pages'] if p['page'] is not None and chapter['start']<=p['page']<=chapter['end'])

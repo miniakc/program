@@ -249,11 +249,16 @@ def self_test(report):
         document=pdfium.PdfDocument(pdf);page=document[0];bitmap=page.render(scale=1);assert bitmap.width>0;bitmap.close();page.close();document.close()
         from PIL import Image, ImageDraw, ImageFont
         from pipeline import ocr_image
-        image=Image.new('RGB',(1200,250),'white');draw=ImageDraw.Draw(image)
+        image=Image.new('RGB',(1200,350),'white');draw=ImageDraw.Draw(image)
         font=ImageFont.truetype('C:/Windows/Fonts/arial.ttf',64)
-        draw.text((30,70),'EMS QUIZ 12345',font=font,fill='black');image.save(root/'ocr.png')
+        draw.text((30,40),'EMS QUIZ 12345',font=font,fill='black')
+        korean=ImageFont.truetype('C:/Windows/Fonts/malgun.ttf',64)
+        draw.text((30,160),'응급의료 119',font=korean,fill='black');image.save(root/'ocr.png')
         recognized=ocr_image(root/'ocr.png',root/'result',threading.Event())
-        assert '12345' in recognized, recognized
+        assert '12345' in recognized and '응급' in recognized.replace(' ',''), recognized
+        image.save(root/'scan.pdf','PDF',resolution=150)
+        extracted=extract_pdf(root/'scan.pdf',root/'cache',threading.Event(),lambda msg:None,force=True)
+        assert '12345' in extracted[0]['text'] and '응급' in extracted[0]['text'].replace(' ',''), extracted
         db=Store(root/'bank.sqlite3');assert db.questions()==[];db.db.close()
         # Start and destroy a real Tk window to verify Tcl/Tk resources in the bundle.
         ROOT=root/'app-data'
@@ -262,7 +267,7 @@ def self_test(report):
         window.store.add_chapter(doc,'Example',1,1)
         q={'id':uid(),'type':'객관식','topic':'Example','concept':'Example objective','stem':'Example question?','options':['A','B','C','D'],'correct':0,'explanation':'Example explanation.','approved':True}
         window.store.put(q);window.refresh();window.start_quiz();window.update();window.editor(q);window.update();window.store.db.close();window.destroy()
-    Path(report).write_text(json.dumps({'ok':True,'python':sys.version,'frozen':bool(getattr(sys,'frozen',False))}),encoding='utf-8')
+    Path(report).write_text(json.dumps({'ok':True,'python':sys.version,'frozen':bool(getattr(sys,'frozen',False)),'checks':['pdf_render','korean_english_ocr','scanned_pdf_to_text','database','gui','question_editor','quiz']}),encoding='utf-8')
 
 if __name__=='__main__':
     if len(sys.argv)==3 and sys.argv[1]=='--self-test':self_test(sys.argv[2])
