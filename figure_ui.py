@@ -1,7 +1,7 @@
 """Local crop editor for scans and complex PDF figure layouts."""
 import json,tkinter as tk
 from tkinter import ttk,messagebox
-from PIL import ImageTk
+from PIL import Image,ImageTk
 import pypdfium2 as pdfium
 from figure_engine import detect_regions,clip,area
 
@@ -16,20 +16,25 @@ class FigureRegionEditor(tk.Toplevel):
         bottom=ttk.Frame(self,padding=14);bottom.pack(side='bottom',fill='x')
         ttk.Button(bottom,text='닫기',command=self.close).pack(side='right');ttk.Button(bottom,text='이 페이지 영역 저장',style='Primary.TButton',command=self.save).pack(side='right',padx=8)
         ttk.Button(bottom,text='마지막 영역 취소',command=self.undo).pack(side='left');ttk.Button(bottom,text='이 페이지 그림 없음',command=self.clear).pack(side='left',padx=8)
-        self.canvas=tk.Canvas(self,bg='#e6ece9',highlightthickness=0);self.canvas.pack(fill='both',expand=True,padx=14,pady=(0,12));self.canvas.bind('<ButtonPress-1>',self.press);self.canvas.bind('<B1-Motion>',self.motion);self.canvas.bind('<ButtonRelease-1>',self.release)
+        self.canvas=tk.Canvas(self,bg='#e6ece9',highlightthickness=0);self.canvas.pack(fill='both',expand=True,padx=14,pady=(0,12));self.canvas.bind('<Configure>',lambda e:self.fit_preview());self.canvas.bind('<ButtonPress-1>',self.press);self.canvas.bind('<B1-Motion>',self.motion);self.canvas.bind('<ButtonRelease-1>',self.release)
         self.protocol('WM_DELETE_WINDOW',self.close);self.after_idle(self.show_page)
     def show_page(self):
         self.update_idletasks()
         page=self.document[self.page_no.get()-1]
         try:
-            self.w,self.h=page.get_size();self.scale=min(max(self.canvas.winfo_width()-20,500)/self.w,max(self.canvas.winfo_height()-20,300)/self.h)
-            bitmap=page.render(scale=self.scale)
-            try:self.photo=ImageTk.PhotoImage(bitmap.to_pil().copy())
+            self.w,self.h=page.get_size()
+            bitmap=page.render(scale=min(2,(8_000_000/max(self.w*self.h,1))**.5))
+            try:self.page_image=bitmap.to_pil().convert('RGB').copy()
             finally:bitmap.close()
             p=self.assets.root/(self.digest+'.regions.json');data=json.loads(p.read_text()) if p.exists() else {}
             self.boxes=data.get(str(self.page_no.get()),detect_regions(page)[0])
         finally:page.close()
-        self.redraw()
+        self.fit_preview()
+    def fit_preview(self):
+        if not hasattr(self,'page_image'):return
+        self.scale=min(max(self.canvas.winfo_width()-20,100)/self.w,max(self.canvas.winfo_height()-20,100)/self.h)
+        size=(max(1,round(self.w*self.scale)),max(1,round(self.h*self.scale)))
+        self.photo=ImageTk.PhotoImage(self.page_image.resize(size,Image.Resampling.LANCZOS));self.redraw()
     def redraw(self):
         self.canvas.delete('all');self.canvas.create_image(10,10,image=self.photo,anchor='nw')
         for i,b in enumerate(self.boxes,1):
