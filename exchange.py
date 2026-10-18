@@ -11,7 +11,7 @@ PROMPT='''첨부한 MD와 실제로 첨부한 그림만 근거로 문제를 출�
 첨부되지 않았거나 식별이 어려운 그림은 추측하지 마세요. 텍스트 문제는 images: []로 둡니다.
 그림은 겹친 설명·라벨을 포함한 하나의 이미지입니다. 그림 안에 정답이 노출되는지도 확인하세요.
 결과를 UTF-8 .json 파일로 다운로드할 수 있게 제공하세요. 출력은 아래 형식의 questions 배열입니다.
-공통: type, topic, concept, stem, explanation, source, page(원본 PDF 페이지), quote(연속된 원문 인용), images.
+공통: type, category(교재와 연결할 출제 카테고리), topic, concept, stem, explanation, source, source_digest(MD의 EMS_SOURCE_SHA256 값을 그대로 복사), page(원본 PDF 페이지), quote(연속된 원문 인용), images.\nMD의 EMS_CHAPTERS에 챕터가 있으면 실제 페이지 범위를 지키고 chapter에 해당 제목을 기록하세요. source_digest는 모든 문항에 넣고 임의의 값으로 바꾸지 마세요.
 객관식: options 4개, correct 0~3 (첫 선택지가 0). OX: answer "O" 또는 "X". 단답형: answer 정답 문자열.
 예시(내용은 실제 자료로 교체):
 {"questions":[{"type":"객관식","topic":"주제","concept":"학습목표","stem":"이 그림에서 확인할 사항은?","options":["선택지1","선택지2","선택지3","선택지4"],"correct":0,"explanation":"정답과 오답 이유","source":"교재명","page":1,"quote":"원문 인용","images":[]},{"type":"OX","topic":"주제","concept":"목표","stem":"옳은 설명이다.","answer":"O","explanation":"근거","images":[]},{"type":"단답형","topic":"주제","concept":"목표","stem":"명칭은?","answer":"정답","explanation":"근거","images":[]}]}
@@ -97,6 +97,9 @@ def markdown(document,entries):
     parts=[]
     for p in document['pages']:
         lines=[f"<!-- PDF_PAGE: {p['page']} -->" if p['page'] is not None else '',p['text']]
+        if not parts:
+            lines.insert(1,'<!-- EMS_SOURCE_SHA256: '+document['digest']+' -->')
+            lines.insert(2,'<!-- EMS_CHAPTERS: '+json.dumps(document.get('chapters',[]),ensure_ascii=False)+' -->')
         for e in entries:
             if e['page']==p['page']:lines.append(f"\n{e['label']} · PDF {e['page']}쪽 · 이미지 ID: `{e['id']}`\n\n![{e['label']}](images/{e['id']})")
         parts.append('\n\n'.join(lines))

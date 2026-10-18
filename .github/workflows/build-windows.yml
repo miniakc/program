@@ -32,7 +32,7 @@ jobs:
         with:
           name: EMSQuiz-Windows-installer
           path: |
-            release/EMSQuiz-Setup-0.5.0.exe
+            release/EMSQuiz-Setup-0.6.0.exe
             dist/bundle-smoke.json
             dist/installed-smoke.json
           if-no-files-found: error
@@ -45,7 +45,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const ref = 'tags/windows-0.5.0';
+            const ref = 'tags/windows-0.6.0';
             const repo = context.repo;
             try {
               const old = await github.rest.git.getRef({...repo, ref});
@@ -59,17 +59,18 @@ jobs:
       - name: Publish tested installer
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: windows-0.5.0
-          name: EMS QUIZ Windows 0.5.0
+          tag_name: windows-0.6.0
+          name: EMS QUIZ Windows 0.6.0
           prerelease: true
           body: |
-            Delete registered textbooks while preserving existing questions and referenced images.
-            Restore the original workspace design with textbook cards, topic cards and clickable quiz option tiles.
-            Export figure regions with overlapping labels and arrows composited from the original PDF. No full-page PNG exports.
-            Includes a local figure-region editor for scans and complex layouts. Existing question images remain available.
-            Offline Markdown/GPT JSON workflow, mixed quizzes, Excel with embedded images and automatic 10-second countdown.
-            Verified with automated tests, real Windows GUI/OCR and install/run/uninstall without Python on PATH.
+            Textbook -> chapter -> checkbox question bank with selective deletion and manual editing.
+            Dashboard opens a separate textbook-linked category quiz tab. Textbooks never mix in a quiz.
+            Import JSON with automatic textbook/page/chapter/quote/image-file checks and explicit pass/fail details.
+            Automatic source comparison is not semantic or clinical answer validation. Manual review remains available.
+            Markdown exports source fingerprints and chapter ranges for subsequent GPT JSON imports.
+            Preserves offline OCR, composite figures/crop editor, Excel images and the automatic 10-second countdown.
+            Tested on Windows, including GUI interactions and install/run/uninstall without Python on PATH.
           files: |
-            release/EMSQuiz-Setup-0.5.0.exe
+            release/EMSQuiz-Setup-0.6.0.exe
             dist/bundle-smoke.json
             dist/installed-smoke.json

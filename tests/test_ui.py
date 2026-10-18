@@ -44,7 +44,7 @@ class WindowsUIFlowTests(unittest.TestCase):
                     {'type':'객관식','stem':'이미지 객관식','concept':'학습목표','options':['A','B','C','D'],'correct':0,'explanation':'설명','images':[name]},
                     {'type':'OX','stem':'OX 문제','concept':'목표','answer':'O','explanation':'OX 해설'},
                     {'type':'단답형','stem':'단답 문제','concept':'목표','answer':'정답','explanation':'단답 해설'}]},ensure_ascii=False),encoding='utf-8')
-                with patch.object(app.filedialog,'askopenfilename',return_value=str(bank)),patch.object(app.messagebox,'askyesno',side_effect=AssertionError('unexpected approval')):
+                with patch.object(app.filedialog,'askopenfilename',return_value=str(bank)),patch.object(window,'choose_destination',return_value=(doc['id'],None)):
                     window.import_bank()
                 self.assertEqual(len(window.qlist.selection()),3);self.assertFalse(any(q['approved'] for q in window.qrows))
                 window.start_quiz();window.update();self.assertEqual(len(window.quiz),3)
@@ -87,4 +87,33 @@ class WindowsUIFlowTests(unittest.TestCase):
                 window.update();self.assertEqual(window.docrows,[]);self.assertEqual(window.doclist.get(),'');self.assertEqual(window.pagepick.get(),'')
                 self.assertEqual(len(window.store.questions()),3);self.assertIsNotNone(window.assets.resolve(name));self.assertEqual(str(window.generate_button.cget('state')),'disabled')
                 self.assertEqual(str(window.figures_button.cget('state')),'disabled')
+            finally:window.stop_countdown();window.store.db.close();window.destroy()
+
+    def test_textbook_chapter_checkboxes_catalog_and_auto_review(self):
+        import app,json
+        with tempfile.TemporaryDirectory() as temp,patch.object(app,'ROOT',Path(temp)):
+            window=app.App();window.update()
+            try:
+                a,_=window.store.add_document('교재 A.pdf',b'A',[{'page':1,'text':'원문 A1'},{'page':2,'text':'원문 A2'}]);b,_=window.store.add_document('교재 B.pdf',b'B',[{'page':1,'text':'원문 B1'}])
+                window.store.add_chapter(a,'A 챕터 1',1,1);window.store.add_chapter(a,'A 챕터 2',2,2);window.store.add_chapter(b,'B 챕터 1',1,1)
+                ca=window.store.chapters(a);cb=window.store.chapters(b)
+                qs=[{'type':'OX','stem':stem,'concept':'학습목표','answer':'O','explanation':quote,'page':page,'quote':quote,'source_digest':window.store.document(doc)['digest'],'category':'동일 카테고리'} for doc,page,quote,stem in [(a,1,'원문 A1','A1 문제'),(a,2,'원문 A2','A2 문제'),(b,1,'원문 B1','B1 문제')]]
+                window.store.import_questions(qs,window.reviewer);window.refresh();window.open_bank();window.update()
+                self.assertEqual(window.bank_level,'books');self.assertEqual(str(window.bank_quiz_button.cget('state')),'disabled')
+                window.open_bank(a);window.update();self.assertEqual(window.bank_level,'chapters')
+                window.open_bank(a,ca[0]['id']);window.update();self.assertEqual(len(window.qlist.get_children()),1)
+                id=window.qlist.get_children()[0];row=window.qlist.rows[id];self.assertFalse(row['var'].get());row['checkbutton'].invoke();self.assertEqual(window.qlist.selection(),(id,))
+                window.select_all_var.set(False);window.select_all_questions();self.assertEqual(window.qlist.selection(),())
+                window.select_all_var.set(True);window.select_all_questions();self.assertEqual(window.qlist.selection(),(id,))
+                with patch.object(window,'confirm_action',return_value=True):window.delete_selected()
+                self.assertEqual(len(window.store.questions()),2);self.assertTrue(any(q['stem']=='A2 문제' for q in window.store.questions()));self.assertTrue(any(q['stem']=='B1 문제' for q in window.store.questions()))
+                window.open_catalog(a);window.catalog_chapter.current(0);window.refresh_catalog_cards();pool=window.catalog_pool();self.assertEqual([q['stem'] for q in pool],['A2 문제'])
+                self.assertTrue(all(q['approved'] for q in pool));window.launch_quiz(pool);self.assertTrue(all(q['doc_id']==a for q in window.quiz));self.assertEqual(window.current_view,'play')
+                # Root import resolves fingerprint and page without opening a destination dialog.
+                file=Path(temp)/'auto.json';new=dict(qs[0],stem='자동 등록 문제');file.write_text(json.dumps({'questions':[new]},ensure_ascii=False),encoding='utf-8');window.open_bank()
+                with patch.object(app.filedialog,'askopenfilename',return_value=str(file)),patch.object(window,'choose_destination',side_effect=AssertionError('should identify textbook automatically')):window.import_bank()
+                imported=next(q for q in window.store.questions() if q['stem']=='자동 등록 문제');self.assertTrue(imported['approved']);self.assertEqual(imported['chapter_id'],ca[0]['id']);self.assertEqual(window.bank_doc_id,a)
+                # Editing source references reruns checks and manual verification remains available.
+                window.editor(imported);window.update();editors=[w for w in window.winfo_children() if w.winfo_class()=='Toplevel']
+                for editor in editors:editor.destroy()
             finally:window.stop_countdown();window.store.db.close();window.destroy()

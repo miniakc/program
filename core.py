@@ -88,8 +88,8 @@ class Store:
             for row in self.db.execute('SELECT id,payload FROM questions').fetchall():
                 q=json.loads(row['payload'])
                 if q.get('doc_id')==id:
-                    q.pop('doc_id',None);q.pop('chapter_id',None)
-                    self.db.execute('UPDATE questions SET payload=? WHERE id=?',(json.dumps(q,ensure_ascii=False),row['id']))
+                    q.pop('doc_id',None);q.pop('chapter_id',None);q['approved']=False;q['review_origin']='automatic';q['review_report']={'status':'needs_review','issues':['연결한 교재가 삭제되었습니다.']}
+                    self.db.execute('UPDATE questions SET payload=?,approved=0 WHERE id=?',(json.dumps(q,ensure_ascii=False),row['id']))
             self.db.execute('DELETE FROM chapters WHERE doc_id=?',(id,))
             self.db.execute('DELETE FROM docs WHERE id=?',(id,))
         return d
@@ -98,7 +98,9 @@ class Store:
             self.db.execute('UPDATE docs SET pages=? WHERE id=?',(json.dumps(pages,ensure_ascii=False),doc))
             for row in self.db.execute('SELECT id,payload FROM questions').fetchall():
                 q=json.loads(row['payload'])
-                if q.get('doc_id')==doc:self.db.execute('UPDATE questions SET approved=0 WHERE id=?',(row['id'],))
+                if q.get('doc_id')==doc:
+                    q['review_origin']='automatic';q['review_report']={'status':'stale','issues':['교재 본문이 바뀌어 재대조가 필요합니다.']}
+                    self.db.execute('UPDATE questions SET approved=0,payload=? WHERE id=?',(json.dumps(q,ensure_ascii=False),row['id']))
     def chapters(self,doc): return [dict(r) for r in self.db.execute('SELECT * FROM chapters WHERE doc_id=? ORDER BY start',(doc,))]
     def add_chapter(self,doc,title,start,end):
         pages=self.document(doc)['pages']; nums={p['page'] for p in pages}
@@ -116,17 +118,17 @@ class Store:
         with self.db:self.db.execute('INSERT INTO questions VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,approved=excluded.approved',(q['id'],json.dumps(q,ensure_ascii=False),int(bool(q.get('approved'))),now()))
     def delete(self,ids):
         with self.db:self.db.executemany('DELETE FROM questions WHERE id=?',[(id,) for id in ids])
-    def import_questions(self,qs):
-        existing={re.sub(r'\s+','',q['stem']) for q in self.questions()}; added=0
-        # Validate every record before beginning any writes.
-        for q in qs: validate(q)
+    def import_questions(self,qs,reviewer=None,target_doc=None,target_chapter=None):
+        for q in qs:validate(q)
+        if reviewer:qs=reviewer.prepare(qs,target_doc,target_chapter)
+        def key(q):return (q.get('doc_id') or q.get('source_digest') or q.get('source',''),q.get('chapter_id',''),re.sub(r'\s+','',q['stem']))
+        existing={key(q) for q in self.questions()};added=0
         with self.db:
             for q in qs:
-                key=re.sub(r'\s+','',q['stem'])
-                if key in existing:continue
-                q=dict(q);q.update(id=uid(),approved=False)
-                self.db.execute('INSERT INTO questions VALUES(?,?,0,?)',(q['id'],json.dumps(q,ensure_ascii=False),now()))
-                existing.add(key);added+=1
+                if key(q) in existing:continue
+                item=dict(q);item.update(id=uid(),approved=bool(q.get('approved')) if reviewer else False)
+                self.db.execute('INSERT INTO questions VALUES(?,?,?,?)',(item['id'],json.dumps(item,ensure_ascii=False),int(item['approved']),now()))
+                existing.add(key(q));added+=1
         return added
     def backup(self,target):
         target=Path(target)

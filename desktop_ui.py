@@ -60,9 +60,9 @@ class WorkspaceUI:
         tk.Label(names,text='응급의료 교육 플랫폼',bg=WHITE,fg=MUTED,font=('맑은 고딕',8)).pack(anchor='w')
         tk.Label(side,text='WORKSPACE',bg=WHITE,fg='#97a8a6',font=('Segoe UI',8,'bold')).pack(anchor='w',padx=25,pady=(0,14))
         self.nav={}
-        for key,text in [('home','▦  대시보드'),('docs','▤  교재 자료'),('bank','☷  문제은행'),('play','▷  퀴즈 실행'),('settings','⚙  사용안내 · 이미지')]:
+        for key,text in [('home','▦  대시보드'),('docs','▤  교재 자료'),('bank','☷  문제은행'),('catalog','▦  카테고리 퀴즈'),('play','▷  퀴즈 실행'),('settings','⚙  사용안내 · 이미지')]:
             b=tk.Button(side,text=text,anchor='w',bg=WHITE,fg=MUTED,activebackground=PALE,activeforeground=TEAL,relief='flat',bd=0,padx=16,pady=13,font=('맑은 고딕',10),cursor='hand2',command=lambda k=key:self.navigate(k));b.pack(fill='x',padx=12,pady=3);self.nav[key]=b
-        tk.Label(side,text='EMS QUIZ  ·  v0.5.0\n강사 워크스페이스',bg=WHITE,fg=MUTED,font=('맑은 고딕',9),justify='left').pack(side='bottom',anchor='w',padx=22,pady=22)
+        tk.Label(side,text='EMS QUIZ  ·  v0.6.0\n강사 워크스페이스',bg=WHITE,fg=MUTED,font=('맑은 고딕',9),justify='left').pack(side='bottom',anchor='w',padx=22,pady=22)
         note=tk.Frame(side,bg='#f0f6f2',padx=13,pady=16);note.pack(side='bottom',fill='x',padx=15,pady=8)
         tk.Label(note,text='교재에서 수업까지',bg='#f0f6f2',fg='#437463',font=('맑은 고딕',10,'bold')).pack(anchor='w')
         tk.Label(note,text='PDF → MD·이미지 저장\nGPT 출제 → JSON → 퀴즈',bg='#f0f6f2',fg=MUTED,font=('맑은 고딕',9),justify='left').pack(anchor='w',pady=(8,0))
@@ -73,9 +73,9 @@ class WorkspaceUI:
         self.setup_job_panel()
         self.tabs=ttk.Notebook(self.main,style='Workspace.TNotebook');self.tabs.pack(fill='both',expand=True,padx=24,pady=(22,6))
         self.views={};self.page_canvases={}
-        for key,title in [('home','대시보드'),('docs','자료 관리'),('bank','문제은행'),('play','퀴즈 실행'),('settings','사용안내 · 이미지')]:
+        for key,title in [('home','대시보드'),('docs','자료 관리'),('bank','문제은행'),('catalog','카테고리 퀴즈'),('play','퀴즈 실행'),('settings','사용안내 · 이미지')]:
             frame=ttk.Frame(self.tabs);self.tabs.add(frame,text=title);self.views[key]=(frame,title)
-            if key in ('home','docs','settings'):
+            if key in ('home','docs','settings','catalog'):
                 canvas=tk.Canvas(frame,bg=BG,highlightthickness=0,bd=0);scroll=ttk.Scrollbar(frame,orient='vertical',command=canvas.yview);scroll.pack(side='right',fill='y');canvas.pack(side='left',fill='both',expand=True);canvas.configure(yscrollcommand=scroll.set)
                 inner=ttk.Frame(canvas);window=canvas.create_window((0,0),window=inner,anchor='nw');self.page_canvases[key]=canvas
                 def resize(event,c=canvas,w=window,f=inner):
@@ -156,10 +156,10 @@ class WorkspaceUI:
         tk.Label(hero,text='오늘의 수업,\n퀴즈로 시작해 볼까요?',bg=DEEP,fg=WHITE,font=('맑은 고딕',24,'bold'),justify='left').pack(anchor='w',pady=(8,8))
         tk.Label(hero,text='PDF를 MD·이미지로 저장하고, GPT에서 만든 JSON 문제를 가져오세요.',bg=DEEP,fg='#b0c9c0',font=('맑은 고딕',10)).pack(anchor='w')
         row=tk.Frame(hero,bg=DEEP);row.pack(fill='x',pady=(16,0))
-        b=tk.Button(row,text='교재 등록하기  →',bg=WHITE,fg=DEEP,relief='flat',padx=17,pady=9,font=('맑은 고딕',10,'bold'),command=lambda:self.safe(self.import_doc));b.pack(side='left');self.task_controls.append(b)
+        b=tk.Button(row,text='교재별 카테고리 퀴즈  →',bg=WHITE,fg=DEEP,relief='flat',padx=17,pady=9,font=('맑은 고딕',10,'bold'),command=lambda:self.open_catalog());b.pack(side='left')
         tk.Button(row,text='문제은행 열기  →',bg=DEEP,fg='#c3e2d2',activebackground=DEEP,activeforeground=WHITE,relief='flat',padx=20,pady=9,font=('맑은 고딕',10),command=lambda:self.navigate('bank')).pack(side='left')
         statrow=ttk.Frame(self.home);statrow.pack(fill='x',pady=16);self.stats={}
-        for i,(key,title) in enumerate([('docs','등록된 교재'),('all','저장된 문제'),('draft','검토할 문제'),('approved','검토 완료 문제')]):
+        for i,(key,title) in enumerate([('docs','등록된 교재'),('all','저장된 문제'),('draft','검토할 문제'),('approved','바로 풀 수 있는 문제')]):
             statrow.columnconfigure(i,weight=1);c=ttk.Frame(statrow,style='Card.TFrame',padding=(15,12));c.grid(row=0,column=i,sticky='nsew',padx=(0,10 if i<3 else 0))
             self.label(c,title,'CardMuted.TLabel');self.stats[key]=self.label(c,'0','CardTitle.TLabel',font=('맑은 고딕',22,'bold'))
         row=ttk.Frame(self.home);row.pack(fill='x',pady=(0,8));self.label(row,'다음 단계로 이어가세요.','TLabel',font=('맑은 고딕',13,'bold'))
@@ -170,19 +170,14 @@ class WorkspaceUI:
         qs=self.store.questions();docs=self.store.documents();values={'docs':len(docs),'all':len(qs),'draft':sum(not q['approved'] for q in qs),'approved':sum(q['approved'] for q in qs)}
         for k,v in values.items():self.stats[k].configure(text=str(v))
         for child in self.topic_cards.winfo_children():child.destroy()
-        topics=list(dict.fromkeys(q.get('topic') or '기타' for q in qs))
-        for i,topic in enumerate(topics[:6]):
-            count=sum((q.get('topic') or '기타')==topic for q in qs);host=ttk.Frame(self.topic_cards);host.grid(row=i//2,column=i%2,sticky='nsew',padx=(0,10 if i%2==0 else 0),pady=5);self.topic_cards.columnconfigure(i%2,weight=1)
-            c=self.card(host,fill='both',expand=True);self.label(c,'CLASSROOM TOPIC','CardMuted.TLabel');self.label(c,topic,'CardTitle.TLabel',wraplength=430);self.label(c,f'{count}문제 · 객관식 / OX / 단답형','CardMuted.TLabel')
-            row=ttk.Frame(c,style='Card.TFrame');row.pack(fill='x',pady=(12,0));self.action(row,'이 주제로 수업 시작 →',lambda t=topic:self.start_topic(t),True)
         for child in self.recent.winfo_children():child.destroy()
         if not docs:
             c=self.card(self.recent,fill='x');self.label(c,'아직 등록된 교재가 없습니다.','CardTitle.TLabel');self.label(c,'PDF를 등록해 본문·그림을 저장하거나 JSON을 가져와 수업을 시작하세요.','CardMuted.TLabel')
-        for doc in docs[:2]:
+        for doc in docs:
             c=self.card(self.recent,fill='x',pady=(0,8));info=ttk.Frame(c,style='Card.TFrame');info.pack(side='left',fill='x',expand=True)
             self.label(info,doc['name'],'CardTitle.TLabel',wraplength=650)
-            chapters=self.store.chapters(doc['id']);self.label(info,f'본문 준비 완료  ·  챕터 {len(chapters)}개  ·  '+'MD·이미지 ZIP을 저장하세요.','CardMuted.TLabel')
-            self.action(c,'교재 열기  →',lambda id=doc['id']:self.open_document(id),side='right')
+            chapters=self.store.chapters(doc['id']);self.label(info,f'본문 준비 완료  ·  챕터 {len(chapters)}개  ·  '+'연결된 카테고리별 문제를 풀어보세요.','CardMuted.TLabel')
+            self.action(c,'카테고리 퀴즈  →',lambda id=doc['id']:self.open_catalog(id),True,side='right')
         self.after_idle(self.fit_scroll_pages)
     def refresh_doc_cards(self):
         if not hasattr(self,'doc_cards'):return
@@ -292,6 +287,8 @@ class WorkspaceUI:
         c=self.card(self.settings,fill='x',pady=(0,14));self.label(c,'그림이 포함된 문제','CardTitle.TLabel')
         self.label(c,'MD에는 이미지 ID와 원본 PDF 페이지를 기록합니다. 그림 영역만 저장하고, 그림 위에 겹친 글씨·라벨·화살표는 함께 포함합니다. 페이지 전체 PNG는 저장하지 않습니다.\n스캔·복잡한 도형은 자료 관리의 그림 확인·영역 선택에서 범위를 지정하세요.\nMD 링크만으로 그림이 GPT에 전달되지는 않습니다. 출제할 그림 파일을 실제로 함께 첨부하세요.\nJSON의 images 배열에 이미지 ID를 넣으면 그림이 표시됩니다. 같은 PC는 JSON만 가져오면 됩니다.\n다른 PC에서는 원래 교재 ZIP의 이미지를 먼저 가져오세요. 문제 수정에서 그림을 직접 첨부할 수도 있습니다.\nExcel에는 문제·출처와 별도 시트의 그림을 함께 저장합니다. 그림 원본은 교재 ZIP에도 보관됩니다.','Card.TLabel',wraplength=900,justify='left')
         row=ttk.Frame(c,style='Card.TFrame');row.pack(fill='x',pady=(12,0));self.action(row,'교재 이미지 ZIP 가져오기',self.import_assets,lock=True)
+        c=self.card(self.settings,fill='x',pady=(0,14));self.label(c,'교재·챕터와 자동 대조','CardTitle.TLabel')
+        self.label(c,'문제은행은 교재 → 챕터 → 체크박스 문제 목록 순서입니다. JSON 등록 시 교재 식별값·페이지·챕터·인용문·이미지 파일 연결을 대조합니다. 통과하면 자동 대조 완료로 표시하고 바로 카테고리 퀴즈에 포함합니다.\n확인 필요 문제는 이유를 표시하며 교재·챕터 이동, 원문 다시 대조, 검토·수정으로 보완할 수 있습니다. 직접 검토 완료도 따로 표시합니다.\n자동 대조는 정답의 의미나 의학적 타당성까지 확정하는 검사가 아닙니다. 정답·해설은 원문을 보며 직접 수정할 수 있습니다.','Card.TLabel',wraplength=900,justify='left')
         c=self.card(self.settings,fill='x');self.label(c,'퀴즈와 자료 보관','CardTitle.TLabel')
         self.label(c,'문제마다 오른쪽 위에서 10초가 자동으로 줄어듭니다. 시간 종료 후에도 수동으로 정답을 공개하고 이동합니다.\n이전·다음: 방향키 / 정답·해설: Space / 10초 다시: 버튼. 정답을 보거나 화면을 떠나면 타이머가 멈춥니다.\n본문 추출·OCR을 중단해도 완료한 페이지는 재사용합니다. 표·그림·수식은 원본과 비교해 확인하세요.\n전체 백업에는 문제은행·원본 교재·이미지가 포함됩니다.','CardMuted.TLabel',wraplength=900,justify='left')
         row=ttk.Frame(c,style='Card.TFrame');row.pack(fill='x',pady=(12,0));self.action(row,'전체 백업 ZIP 저장',self.backup,lock=True)
