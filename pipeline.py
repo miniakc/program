@@ -61,15 +61,17 @@ def extract_pdf(path,cache,cancel,progress,force=False):
     path=Path(path);raw=path.read_bytes();key=hashlib.sha256(raw).hexdigest()+('-ocr' if force else '-auto')
     folder=Path(cache)/key;folder.mkdir(parents=True,exist_ok=True)
     reader=PdfReader(path);pages=[];rendered=None
+    total=len(reader.pages)
+    progress({'phase':'PDF 준비','current':0,'total':total,'unit':'쪽','detail':f'전체 {total}쪽을 순서대로 확인합니다. 본문이 부족한 페이지는 자동 OCR합니다.'})
     try:
         for i,page in enumerate(reader.pages,1):
             check_cancel(cancel);saved=folder/f'{i}.json'
             if saved.exists():
-                record=json.loads(saved.read_text(encoding='utf-8'));progress(f'추출 결과 재사용 {i}/{len(reader.pages)}쪽')
+                record=json.loads(saved.read_text(encoding='utf-8'));progress({'phase':'저장된 본문 재사용','current':i-1,'total':total,'unit':'쪽','detail':f'PDF {i}쪽의 완료된 결과를 불러옵니다.'})
             else:
                 text='' if force else page.extract_text() or '';method='text'
                 if force or len(text.strip())<30:
-                    progress(f'한국어·영어 OCR {i}/{len(reader.pages)}쪽')
+                    progress({'phase':'한국어·영어 글자 인식 (OCR)','current':i-1,'total':total,'unit':'쪽','detail':f'PDF {i}쪽 인식 중 · 현재 페이지가 끝나면 진행률이 올라갑니다.'})
                     import pypdfium2 as pdfium
                     if rendered is None:rendered=pdfium.PdfDocument(str(path))
                     pdfpage=rendered[i-1]
@@ -84,9 +86,10 @@ def extract_pdf(path,cache,cancel,progress,force=False):
                         finally:bitmap.close()
                     finally:pdfpage.close()
                     method='ocr'
-                else:progress(f'PDF 본문 추출 {i}/{len(reader.pages)}쪽')
+                else:progress({'phase':'PDF 본문 추출','current':i-1,'total':total,'unit':'쪽','detail':f'PDF {i}쪽의 텍스트를 추출합니다.'})
                 record={'page':i,'text':text,'method':method};save_json(saved,record)
             pages.append(record)
+            progress({'phase':'페이지 처리 완료','current':i,'total':total,'unit':'쪽','detail':f'PDF {i}쪽 완료 · 결과는 자동 저장됩니다.'})
         return pages
     finally:
         if rendered is not None:rendered.close()
@@ -158,7 +161,7 @@ def generate(pages,count,model,key,topic,source,cache,cancel,progress,request_fn
     call=request_fn or request_questions
     for i,chunk in enumerate(chunks):
         check_cancel(cancel);path=folder/f'{i}.json';qty=count//len(chunks)+(i<count%len(chunks))
-        progress(f'AI 문제 생성 {i+1}/{len(chunks)}구간 · 최대 {qty}문제')
+        progress({'phase':'AI 문제 생성','current':i,'total':len(chunks),'unit':'구간','detail':f'{i+1}구간 요청 중 · 최대 {qty}문제 · 응답을 기다리고 있습니다.'})
         if path.exists():data=json.loads(path.read_text(encoding='utf-8'));qs=data['questions'];use=data.get('usage',{})
         else:
             qs,use=call(key,response_payload(model,chunk,qty,topic,source),cancel,progress)
@@ -169,6 +172,7 @@ def generate(pages,count,model,key,topic,source,cache,cancel,progress,request_fn
                 match=next((p for p in chunk if p['page']==q.get('page') and isinstance(quote,str) and len(quote.strip())>=8 and normalize(quote) in normalize(p['text'])),None)
                 if not match:raise ValueError(f'{i+1}구간의 AI 인용문이 원문과 일치하지 않습니다. 해당 구간은 저장하지 않았습니다.')
             save_json(path,{'questions':qs,'usage':use})
+        progress({'phase':'AI 생성 구간 완료','current':i+1,'total':len(chunks),'unit':'구간','detail':f'{i+1}구간 완료 · 원문 인용 검사를 마치고 저장했습니다.'})
         for k in usage:usage[k]+=use.get(k,0)
         for q in qs:
             stem=normalize(q['stem']);concept=normalize(q['concept'])

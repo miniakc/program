@@ -1,12 +1,12 @@
 [Setup]
 AppId={{5787BD17-7FE8-43E8-82B2-F18CC8AD287D}
 AppName=EMS QUIZ
-AppVersion=0.2.0
+AppVersion=0.3.0
 DefaultDirName={localappdata}\Programs\EMSQuiz
 DefaultGroupName=EMS QUIZ
 PrivilegesRequired=lowest
 OutputDir=release
-OutputBaseFilename=EMSQuiz-Setup-0.2.0
+OutputBaseFilename=EMSQuiz-Setup-0.3.0
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
